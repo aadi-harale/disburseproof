@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* Dark mode follows a class on <html>, set before first paint in index.html. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Components use only these semantic names, never raw palette
+ * colours, so light and dark themes stay in step. State colours are reserved
+ * for student state: green = paid once, amber = paid twice, red = ₹0, grey = pending.
+ */
+:root {
+  --canvas: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #f1f1ee;
+  --border: #e3e3de;
+  --border-strong: #cfcfc8;
+  --text: #17171a;
+  --muted: #5c5c66;
+  --faint: #8a8a94;
+  --accent: #3730a3;
+  --accent-hover: #2e2890;
+  --accent-soft: #ecebfb;
+  --accent-text: #3730a3;
+  --on-accent: #ffffff;
+
+  --paid: #1e8f4e;
+  --paid-soft: #e3f4ea;
+  --paid-text: #14663a;
+  --twice: #e8a13a;
+  --twice-soft: #fcf0d9;
+  --twice-text: #8a5208;
+  --unpaid: #cf3f3f;
+  --unpaid-soft: #fbe3e3;
+  --unpaid-text: #9b2323;
+  --pending: #e2e3e6;
+  --pending-text: #8a8a94;
+
+  --focus: #4f46e5;
+  --shadow: 0 1px 2px rgb(15 15 20 / 0.04), 0 1px 1px rgb(15 15 20 / 0.03);
+  --shadow-lg: 0 12px 32px -12px rgb(15 15 20 / 0.25);
+}
+
+.dark {
+  --canvas: #0f1013;
+  --surface: #16181c;
+  --surface-2: #1c1f25;
+  --border: #2a2d35;
+  --border-strong: #3a3e48;
+  --text: #e9eaee;
+  --muted: #a1a5b0;
+  --faint: #7b808c;
+  --accent: #6366f1;
+  --accent-hover: #7577f4;
+  --accent-soft: #23244a;
+  --accent-text: #a5a8ff;
+  --on-accent: #ffffff;
+
+  --paid: #2fa864;
+  --paid-soft: #16301f;
+  --paid-text: #7fd9a3;
+  --twice: #e9aa45;
+  --twice-soft: #3a2a10;
+  --twice-text: #f3c77e;
+  --unpaid: #e05555;
+  --unpaid-soft: #3a1616;
+  --unpaid-text: #f59a9a;
+  --pending: #2b2f37;
+  --pending-text: #6f7480;
+
+  --focus: #818cf8;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+  --color-paid: var(--paid);
+  --color-paid-soft: var(--paid-soft);
+  --color-paid-text: var(--paid-text);
+  --color-twice: var(--twice);
+  --color-twice-soft: var(--twice-soft);
+  --color-twice-text: var(--twice-text);
+  --color-unpaid: var(--unpaid);
+  --color-unpaid-soft: var(--unpaid-soft);
+  --color-unpaid-text: var(--unpaid-text);
+  --color-pending: var(--pending);
+  --color-pending-text: var(--pending-text);
+  --color-focus: var(--focus);
+
+  /* IBM Plex Sans and Plex Mono both contain the ₹ (U+20B9) glyph in their
+     latin-ext subset (checked with fontkit). Noto Sans is the next fallback. */
+  --font-sans: "IBM Plex Sans", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Noto Sans Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas font-sans text-[14px] leading-[1.5] text-ink antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+}
+
+@layer utilities {
+  /* Money, counts, IDs and hashes: monospace with tabular figures so columns align. */
+  .figures {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings:
+      "tnum" 1,
+      "zero" 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print: the receipt page prints as a document (browser print -> PDF). */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-document {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .print-break-avoid {
+    break-inside: avoid;
+  }
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}
