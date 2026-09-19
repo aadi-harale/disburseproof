@@ -19,5 +19,6 @@ confirm_changeset = false
 fail_on_empty_changeset = false
 resolve_s3 = true
 s3_prefix = "disburseproof-dev"
-parameter_overrides = "Env=\"dev\""
+# Pinned explicitly: `sam deploy` otherwise reuses whatever values the stack had before.
+parameter_overrides = "Env=\"dev\" MaxActiveRuns=\"3\" LogRetentionDays=\"7\""
 tags = "project=\"disburseproof\" env=\"dev\""

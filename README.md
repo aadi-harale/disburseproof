@@ -4,12 +4,40 @@
 
 **A reliability sandbox for benefit-disbursement pipelines.** Load a batch of synthetic scholarship beneficiaries, run a deterministic duplicate-delivery experiment against a disbursement processor on real AWS infrastructure, and get an evidence-backed verdict on whether every eligible student was paid **exactly once**.
 
-> Retries delivered 12 payment events twice. The vulnerable processor paid those 12 students twice, and because the budget is fixed, **12 other eligible students received ₹0**. The protected processor, on the identical workload, paid all 100 exactly once.
+> **Can 100 students each get paid exactly once when 12 payment instructions are sent twice?** The unprotected processor paid 12 students twice, and because the budget is fixed, **12 other eligible students received ₹0**. The protected processor, on the identical test, paid all 100 exactly once.
 
-> **Synthetic sandbox — no real money or personal data.** No bank APIs, no Aadhaar or other PII, and no claim about how PFMS, NSP or any government system is built. A PASS means *one business effect per entitlement under the tested replay*. It does not mean "exactly-once delivery", and it does not prove anything about future executions.
+> **Synthetic sandbox — no real money or personal data.** No bank APIs, no Aadhaar or other PII, and no claim about how PFMS, NSP or any government system is built. A PASS means *every eligible student received exactly one synthetic payment under the tested workload*. It does not mean "exactly-once delivery", and it does not prove anything about future executions.
 
 - **Live app:** https://main.d194gkph6yfxxv.amplifyapp.com
 - **API:** https://5f1ru6pgai.execute-api.ap-south-1.amazonaws.com (try `GET /overview`)
+
+## Screenshots
+
+| Payment integrity failed | Integrity verified |
+|---|---|
+| ![FAIL climax: 12 paid twice, 12 got ₹0, ₹1,20,000 misallocated](docs/screenshots/02-fail-climax.png) | ![VERIFIED climax: 100/100 paid, 12 repeats refused](docs/screenshots/05-verified-climax.png) |
+
+![Compare: same test, different outcome](docs/screenshots/06-compare.png)
+
+More in [`docs/screenshots/`](docs/screenshots/): hero (desktop and 390 px), why-it-failed inspector, same-test proof, receipt, AWS evidence, New test, My runs.
+
+## Who it's for and how to use it
+
+- **Backend and platform engineers:** see how a disbursement pipeline behaves under retries, compare an unsafe design with a safe one, and show evidence to reviewers.
+- **Programme technology and audit teams:** model "what if X instructions are repeated in a batch like ours?", and get a plain-language result and a receipt to file.
+- **Students and learners:** watch idempotency and at-least-once delivery happen for real on AWS.
+
+**Scope.** DisburseProof tests its *built-in* processors against your batch and retry scenario. It does not connect to, or test, your own payment system. *Not yet: test your own processor* is on the roadmap and is not built.
+
+**How to use it.**
+
+1. **Home** tells the whole story on the golden test: 01 Define, 02 Break, 03 Protect, 04 Prove. It replays the latest recorded runs from their real delivery rows, and each section can also run live on AWS.
+2. **New test** takes three steps:
+   - choose students: the demo batch, generated students, or a CSV (the page has a template and lists row errors in plain words);
+   - choose how many instructions are repeated (presets, a slider and a seed);
+   - **Run both**, which lands on the side-by-side result.
+3. **My runs** lists every run, with search, filters and live status. Every run page at `/runs/:id` is shareable, and has a Copy link button and an affected-students CSV export. From there you can open the receipt (download the JSON, or print it or save it as PDF).
+4. **Docs** (in the app) covers the CSV format, what each result means, a glossary, the limits and an FAQ.
 
 ## The problem
 
@@ -21,7 +49,7 @@ DisburseProof turns that failure, which usually stays hidden until reconciliatio
 
 Batch: 100 students × ₹10,000, budget ₹10,00,000. Experiment: seed `FC-2026-0918`, D = 12 duplicated payment events, 112 deliveries in two phases.
 
-| Metric | Vulnerable | Protected |
+| Metric | Unprotected (`vulnerable`) | Protected |
 |---|---|---|
 | Deliveries | 112 | 112 |
 | Ledger effects (payments) | 100 | 100 |
@@ -147,11 +175,12 @@ Delivery IDs are `uuid5(run_id, phase, logical_event_id, copy)` rather than rand
 - The **replay fingerprint** is the SHA-256 of the experiment definition in canonical JSON. Both runs in a comparison share it, which shows they processed the identical workload. It is a fingerprint, not a signature: it is not tamper-proof.
 - The **evaluator** is plain code. It recomputes every count from Ledger, Deliveries and Batches rows with strongly consistent reads, and fails closed if the number of recorded deliveries is not N + D.
 - The **receipt** is canonical JSON in S3. Its SHA-256 is stored on the run; the API re-hashes the S3 object, and the receipt page re-hashes the downloaded bytes in the browser with Web Crypto.
+- **Replays are real rows.** The home page and every run page rebuild a run from `GET /runs/{id}/deliveries` (the run's Deliveries rows, oldest first), at 1× real time or evenly spaced over about 20 s. Nothing is generated or padded, and the verdict always comes from the backend's evaluation.
 - The **AWS evidence drawer** reads the Step Functions execution history, SQS queue depths and the run's CloudWatch log lines live.
 
-### Race Lab: check-then-write, live
+### Concurrency Lab: check-then-write, live
 
-The Race Lab (`/race`) releases up to 20 copies of **one** payment: a Step Functions Map state invokes the worker Lambda directly, once per copy, six at a time. The naive processor reads the idempotency record, waits an injected 200 ms race window, then pays and writes the record, so copies that overlap all see "not paid" and all pay. The protected processor claims the key in the same transaction as the payment, so exactly one copy can commit. The naive count varies between attempts: only copies that overlap inside the window double-pay. The Map runs at most 6 copies at once because this account's Lambda concurrency quota is 10; a 20-way burst throttled the API during testing. On AWS, 20 naive copies made 6 payments for one entitlement (the whole first wave of six) in two attempts out of two; 20 protected copies made exactly 1.
+The Concurrency Lab (`/race`, under Engineering) releases up to 20 copies of **one** payment: a Step Functions Map state invokes the worker Lambda directly, once per copy, six at a time. The naive processor reads the idempotency record, waits an injected 200 ms race window, then pays and writes the record, so copies that overlap all see "not paid" and all pay. The protected processor claims the key in the same transaction as the payment, so exactly one copy can commit. The naive count varies between attempts: only copies that overlap inside the window double-pay. The Map runs at most 6 copies at once because this account's Lambda concurrency quota is 10; a 20-way burst throttled the API during testing. On AWS, 20 naive copies made 6 payments for one entitlement (the whole first wave of six) in two attempts out of two; 20 protected copies made exactly 1.
 
 ## Security and threat model
 
@@ -238,6 +267,10 @@ npm ci && npm run lint && npm run typecheck && npm run build
 ```
 
 GitHub Actions runs ruff, mypy, pytest (unit and security tests), `pip-audit`, `sam validate --lint`, checkov, gitleaks over the full history, and the frontend lint, typecheck, build and `npm audit` on every push.
+
+## Credits
+
+Built by Aadi Harale with **Claude Code** (Anthropic) as the AI pair programmer for design, code, tests, AWS deployment and documentation. No other AI tools were used.
 
 ## What I learned
 
