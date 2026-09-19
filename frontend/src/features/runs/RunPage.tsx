@@ -6,6 +6,7 @@ import { Button, ButtonLink } from "../../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { ErrorState } from "../../components/ui/ErrorState";
 import { Hash } from "../../components/ui/Hash";
+import { HelpLink } from "../../components/ui/HelpLink";
 import { Icon } from "../../components/ui/Icon";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -66,6 +67,7 @@ export function RunPage() {
         description={`${run.batch_name} · ${run.logical_events} students · ${run.duplicate_count} of ${run.logical_events} payment instructions sent twice (${run.expected_deliveries} arrivals)`}
         actions={
           <>
+            <HelpLink section="results" label="reading a result" />
             <CopyLinkButton />
             <Button onClick={() => setEvidenceOpen(true)}>
               <Icon name="layers" /> AWS evidence

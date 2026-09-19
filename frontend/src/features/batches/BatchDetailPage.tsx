@@ -137,9 +137,9 @@ function ExperimentForm({ batch, unequalAmounts }: { batch: Batch; unequalAmount
   if (max < 1) {
     return (
       <Card>
-        <CardHeader title="Define an experiment" />
+        <CardHeader title="Define a test" />
         <CardBody className="text-[13px] text-muted">
-          A batch needs at least 2 entitlements to duplicate one.
+          A test needs at least 2 students, so that one instruction can be repeated.
         </CardBody>
       </Card>
     );
@@ -147,8 +147,8 @@ function ExperimentForm({ batch, unequalAmounts }: { batch: Batch; unequalAmount
   return (
     <Card>
       <CardHeader
-        title="Define an experiment"
-        subtitle="The seed picks which payment events are delivered twice. Same inputs, same fingerprint."
+        title="Define a test"
+        subtitle="The seed picks which payment instructions are sent twice. Same students + seed + count = the same test and fingerprint."
       />
       <CardBody>
         <form onSubmit={submit} className="space-y-3">
@@ -162,7 +162,7 @@ function ExperimentForm({ batch, unequalAmounts }: { batch: Batch; unequalAmount
                 className={cx(inputClass, "figures")}
               />
             </Field>
-            <Field label={`Duplicated events (1–${max})`} htmlFor="exp-d">
+            <Field label={`Instructions sent twice (1–${max})`} htmlFor="exp-d">
               <input
                 id="exp-d"
                 inputMode="numeric"
@@ -174,13 +174,13 @@ function ExperimentForm({ batch, unequalAmounts }: { batch: Batch; unequalAmount
           </div>
           {unequalAmounts && (
             <p className="text-[12px] text-twice-text">
-              Amounts differ across entitlements, so how many students a vulnerable run starves is not fixed;
-              it depends on the order SQS delivers messages.
+              Amounts differ between students, so how many students an unprotected run leaves unpaid is not
+              fixed: it depends on the order SQS delivers the instructions.
             </p>
           )}
           {error !== null && <ErrorState error={error} compact />}
           <Button type="submit" variant="primary" disabled={!valid} loading={busy}>
-            Define experiment
+            Define test
           </Button>
         </form>
       </CardBody>
@@ -200,8 +200,8 @@ function ExperimentRow({ experiment }: { experiment: Experiment }) {
     <li className="space-y-2 px-4 py-3 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
         <span className="figures">
-          seed {experiment.seed} · D = {experiment.duplicate_count} · {experiment.expected_deliveries}{" "}
-          deliveries
+          seed {experiment.seed} · {experiment.duplicate_count} sent twice · {experiment.expected_deliveries}{" "}
+          instructions
         </span>
         <span className="text-[12px] text-faint">{formatDateTime(experiment.created_at)}</span>
       </div>
@@ -212,7 +212,7 @@ function ExperimentRow({ experiment }: { experiment: Experiment }) {
           onClick={() => launch("vulnerable")}
           loading={start.isPending && start.variables?.processor === "vulnerable"}
         >
-          Run vulnerable
+          Run unprotected
         </Button>
         <Button
           size="sm"

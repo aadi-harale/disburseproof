@@ -6,12 +6,14 @@ import { Button, ButtonLink } from "../../components/ui/Button";
 import { cx } from "../../components/ui/cx";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ErrorState } from "../../components/ui/ErrorState";
+import { HelpLink } from "../../components/ui/HelpLink";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { VerdictBadge } from "../../components/ui/VerdictBadge";
 import { useReceipt, useRun } from "../../lib/api/queries";
 import type { Receipt } from "../../lib/api/types";
-import { formatCount, formatDateTime, formatDuration, formatINR, processorLabel } from "../../lib/format";
+import { formatCount, formatDateTime, formatDuration, formatINR } from "../../lib/format";
+import { CHECK, PROCESSOR, TERMS } from "../../lib/labels";
 import { useDocumentTitle } from "../../lib/hooks";
 
 /** SHA-256 of the exact stored bytes, computed in this browser with Web Crypto. */
@@ -77,7 +79,8 @@ export function ReceiptPage() {
         <Link to={`/runs/${runId}`} className="text-[13px] font-medium text-muted hover:text-ink">
           ← Back to the run
         </Link>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <HelpLink section="receipt" label="reading the receipt" />
           <Button size="sm" onClick={download}>
             <Icon name="download" size={14} /> Download JSON
           </Button>
@@ -93,7 +96,7 @@ export function ReceiptPage() {
             <div className="text-[12px] font-medium tracking-wide text-muted uppercase">DisburseProof</div>
             <h1 className="mt-1 text-[22px] font-semibold">Integrity receipt</h1>
             <p className="mt-1 text-[13px] text-muted">
-              {processorLabel(doc.processor)} processor · {doc.batch.name}
+              {PROCESSOR[doc.processor].primary} processor · {doc.batch.name}
             </p>
           </div>
           <div className="text-right">
@@ -102,12 +105,19 @@ export function ReceiptPage() {
           </div>
         </header>
 
-        <Section title="Invariants">
+        <HumanSummary receipt={doc} />
+
+        <Section title="The three checks">
           <ul className="divide-y divide-line">
             {doc.invariants.map((invariant) => (
               <li key={invariant.id} className="flex items-start justify-between gap-3 py-2">
                 <div>
-                  <div className="text-[13px] font-medium">{invariant.title}</div>
+                  <div className="text-[14px] font-medium">
+                    {CHECK[invariant.id]?.primary ?? invariant.title}{" "}
+                    <span className="text-[11.5px] font-normal text-faint">
+                      {CHECK[invariant.id]?.technical}
+                    </span>
+                  </div>
                   <div className="figures text-[12px] text-muted">{invariant.detail}</div>
                 </div>
                 <VerdictBadge verdict={invariant.result} />
@@ -121,17 +131,24 @@ export function ReceiptPage() {
         </Section>
 
         {(doc.double_paid_beneficiary_ids.length > 0 || doc.unpaid_beneficiary_ids.length > 0) && (
-          <Section title="Affected beneficiaries">
+          <Section title="Affected students">
             <IdList label="Paid more than once" ids={doc.double_paid_beneficiary_ids} tone="warning" />
-            <IdList label="Paid ₹0" ids={doc.unpaid_beneficiary_ids} tone="danger" />
+            <IdList label="Got ₹0" ids={doc.unpaid_beneficiary_ids} tone="danger" />
           </Section>
         )}
 
-        <Section title="Workload and execution">
+        <Section title="Technical record">
           <dl className="grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
-            <Field label="Replay fingerprint" value={doc.replay_fingerprint} mono wide />
+            <Field label="Run ID" value={doc.run_id} mono wide />
+            <Field
+              label={`${TERMS.fingerprint.primary} (${TERMS.fingerprint.technical})`}
+              value={doc.replay_fingerprint}
+              mono
+              wide
+            />
             <Field label="Batch content SHA-256" value={doc.batch.content_sha256} mono wide />
-            <Field label="Experiment" value={doc.experiment_id} mono />
+            <Field label="Test (experiment)" value={doc.experiment_id} mono />
+            <Field label="Processor" value={`${PROCESSOR[doc.processor].primary} (${doc.processor})`} />
             <Field label="Scheme · year" value={`${doc.batch.scheme_id} · ${doc.batch.academic_year}`} mono />
             <Field label="Started" value={formatDateTime(doc.execution.started_at)} />
             <Field label="Finished" value={formatDateTime(doc.execution.finished_at)} />
@@ -145,7 +162,7 @@ export function ReceiptPage() {
           </dl>
         </Section>
 
-        <Section title="SHA-256 fingerprinted receipt">
+        <Section title="Receipt checksum (SHA-256)">
           <div className="figures rounded-lg bg-surface-2 p-3 text-[12px] break-all">{data.sha256}</div>
           <ul className="mt-3 space-y-1.5 text-[13px]">
             <Check ok label="Recorded on the run when the receipt was written to S3" />
@@ -157,8 +174,8 @@ export function ReceiptPage() {
             />
           </ul>
           <p className="mt-3 text-[12px] text-muted">
-            A fingerprint shows the receipt has not changed since it was written. It is not a signature:
-            anyone with write access could recompute it.
+            A matching checksum shows this file has not changed since it was written. It is not a signature
+            and not tamper-proof: anyone with write access to the bucket could rewrite both.
           </p>
         </Section>
 
@@ -167,6 +184,37 @@ export function ReceiptPage() {
         </footer>
       </article>
     </div>
+  );
+}
+
+/** One plain sentence per fact, from the receipt's own counts. */
+function HumanSummary({ receipt }: { receipt: Receipt }) {
+  const c = receipt.counts;
+  const eligible = receipt.batch.entitlements;
+  const pass = receipt.verdict === "PASS";
+  const paid = eligible - c.unpaid;
+  return (
+    <section
+      className={cx(
+        "print-break-avoid mt-6 rounded-xl border px-5 py-4",
+        pass ? "border-paid/40 bg-paid-soft" : "border-unpaid/40 bg-unpaid-soft",
+      )}
+    >
+      <p
+        className={cx("text-[20px] leading-snug font-semibold", pass ? "text-paid-text" : "text-unpaid-text")}
+      >
+        {formatCount(paid)}/{formatCount(eligible)} eligible students paid.{" "}
+        {c.double_paid === 0
+          ? "No entitlement paid twice."
+          : `${formatCount(c.double_paid)} entitlement${c.double_paid === 1 ? "" : "s"} paid twice.`}{" "}
+        {formatINR(c.misallocated_paise)} misallocated.
+      </p>
+      <p className="mt-1 text-[14px] text-muted">
+        {pass
+          ? "Every eligible student received exactly one synthetic payment under the tested workload."
+          : "This run failed at least one check. The affected students are listed below."}
+      </p>
+    </section>
   );
 }
 
@@ -182,14 +230,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function CountsTable({ receipt }: { receipt: Receipt }) {
   const c = receipt.counts;
   const rows: [string, string][] = [
-    ["Entitlements in batch", formatCount(receipt.batch.entitlements)],
-    ["Deliveries", formatCount(c.deliveries)],
-    ["Ledger effects (payments)", formatCount(c.ledger_effects)],
+    ["Eligible students (entitlements)", formatCount(receipt.batch.entitlements)],
+    ["Payment instructions (deliveries)", formatCount(c.deliveries)],
+    ["Payments made (ledger effects)", formatCount(c.ledger_effects)],
     ["Paid exactly once", formatCount(c.paid_once)],
     ["Paid more than once", formatCount(c.double_paid)],
-    ["Paid ₹0", formatCount(c.unpaid)],
-    ["Duplicates suppressed", formatCount(c.duplicates_suppressed)],
-    ["Rejected: budget exhausted", formatCount(c.budget_exhausted)],
+    ["Got ₹0", formatCount(c.unpaid)],
+    ["Repeats refused", formatCount(c.duplicates_suppressed)],
+    ["Not paid — budget ran out", formatCount(c.budget_exhausted)],
     ["Budget", formatINR(receipt.batch.total_budget_paise)],
     ["Paid out", formatINR(c.spent_paise)],
     ["Misallocated", formatINR(c.misallocated_paise)],

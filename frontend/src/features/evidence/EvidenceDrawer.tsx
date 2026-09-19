@@ -6,11 +6,11 @@ import { Hash } from "../../components/ui/Hash";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { Table, Td, Th } from "../../components/ui/Table";
-import { useEvidence } from "../../lib/api/queries";
-import type { EvidenceLogLine } from "../../lib/api/types";
-import { formatDuration, formatTimeMs } from "../../lib/format";
+import { useEvidence, useRun } from "../../lib/api/queries";
+import type { Evidence, EvidenceLogLine, Run } from "../../lib/api/types";
+import { formatCount, formatDateTime, formatDuration, formatTimeMs } from "../../lib/format";
 
-/** Read-only evidence that the run executed on AWS: execution history, queue depth, log lines. */
+/** Read-only evidence that the run executed on AWS, in a side drawer. */
 export function EvidenceDrawer({
   runId,
   open,
@@ -20,17 +20,26 @@ export function EvidenceDrawer({
   open: boolean;
   onClose: () => void;
 }) {
-  const evidence = useEvidence(runId, open);
-  const data = evidence.data;
-
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title="AWS evidence"
-      subtitle={data ? `Region ${data.region} · read live from AWS APIs` : "Read live from AWS APIs"}
+      subtitle="Read live from AWS APIs for this run"
       width="max-w-2xl"
     >
+      <EvidencePanel runId={runId} enabled={open} />
+    </Drawer>
+  );
+}
+
+/** The service path first (one real value per step), then the raw evidence. */
+export function EvidencePanel({ runId, enabled = true }: { runId: string; enabled?: boolean }) {
+  const evidence = useEvidence(runId, enabled);
+  const run = useRun(runId).data;
+  const data = evidence.data;
+  return (
+    <div>
       {evidence.isLoading && (
         <div className="space-y-3">
           <Skeleton className="h-20" />
@@ -41,6 +50,7 @@ export function EvidenceDrawer({
       {evidence.error && <ErrorState error={evidence.error} onRetry={() => evidence.refetch()} />}
       {data && (
         <div className="space-y-7">
+          {run && <ServicePath run={run} evidence={data} />}
           <section>
             <SectionTitle title="Step Functions execution" />
             {data.execution_arn ? (
@@ -133,7 +143,7 @@ export function EvidenceDrawer({
           </section>
         </div>
       )}
-    </Drawer>
+    </div>
   );
 }
 
@@ -175,5 +185,98 @@ function LogLine({ line }: { line: EvidenceLogLine }) {
         </pre>
       </details>
     </li>
+  );
+}
+
+/** Orchestrate → Deliver → Process → Record → Verify → Prove, each with a value read from AWS or the run record. */
+function ServicePath({ run, evidence }: { run: Run; evidence: Evidence }) {
+  const s = run.summary;
+  const evaluate = evidence.states.find((state) => state.name === "Evaluate");
+  const execution = evidence.execution_arn?.split(":").pop();
+  const steps: { human: string; service: string; value: React.ReactNode }[] = [];
+  if (evidence.execution_arn) {
+    steps.push({
+      human: "Orchestrate",
+      service: "Step Functions",
+      value: (
+        <>
+          {run.status.toLowerCase()} ·{" "}
+          <span className="figures">
+            {execution && execution.length > 18 ? `…${execution.slice(-12)}` : execution}
+          </span>
+          {evidence.console_url && (
+            <a
+              href={evidence.console_url}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-2 inline-flex items-center gap-1 text-accent-text hover:underline"
+            >
+              Open in AWS console <Icon name="external" size={12} />
+            </a>
+          )}
+        </>
+      ),
+    });
+  }
+  steps.push({
+    human: "Deliver",
+    service: "SQS",
+    value: (
+      <>
+        {formatCount(run.delivered_count)} payment instructions delivered · dead-letter queue{" "}
+        <span className={evidence.queue.dlq_visible > 0 ? "font-semibold text-unpaid-text" : ""}>
+          {formatCount(evidence.queue.dlq_visible)}
+        </span>
+      </>
+    ),
+  });
+  if (s) {
+    steps.push({
+      human: "Process",
+      service: "Lambda worker",
+      value: `${formatCount(s.deliveries)} instructions processed`,
+    });
+    steps.push({
+      human: "Record",
+      service: "DynamoDB",
+      value: `${formatCount(s.ledger_effects)} payments · ${formatCount(s.duplicates_suppressed + s.budget_exhausted)} refusals`,
+    });
+  }
+  if (run.verdict) {
+    steps.push({
+      human: "Verify",
+      service: "evaluator (Lambda)",
+      value: `${run.verdict}${evaluate ? ` in ${formatDuration(evaluate.total_ms)}` : ""} · ${formatDateTime(run.completed_at ?? run.finished_at)}`,
+    });
+  }
+  if (run.receipt_s3_key) {
+    steps.push({
+      human: "Prove",
+      service: "S3",
+      value: <span className="figures break-all">s3://…/{run.receipt_s3_key}</span>,
+    });
+  }
+  return (
+    <section>
+      <SectionTitle
+        title="Service path"
+        hint={`Region ${evidence.region}${run.duration_ms ? ` · run took ${formatDuration(run.duration_ms)}` : ""}`}
+      />
+      <ol className="relative space-y-3 border-l-2 border-line pl-5">
+        {steps.map((step) => (
+          <li key={step.human} className="relative">
+            <span
+              className="absolute top-1.5 -left-[27px] size-3 rounded-full border-2 border-surface bg-paid"
+              aria-hidden
+            />
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[15px] font-semibold">{step.human}</span>
+              <span className="text-[12px] text-faint">{step.service}</span>
+            </div>
+            <div className="text-[13.5px] text-muted">{step.value}</div>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

@@ -47,7 +47,8 @@ export function useRuns() {
   return useQuery({
     queryKey: keys.runs,
     queryFn: async () => (await api.listRuns()).items,
-    refetchInterval: 10000,
+    // Live rows update every 2 s while any run is in progress.
+    refetchInterval: (query) => (query.state.data?.some((run) => !run.is_terminal) ? 2000 : 10000),
   });
 }
 

@@ -3,11 +3,12 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { Badge } from "../../components/ui/Badge";
-import { Button } from "../../components/ui/Button";
+import { Button, ButtonLink } from "../../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { cx } from "../../components/ui/cx";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Field } from "../../components/ui/Field";
+import { HelpLink } from "../../components/ui/HelpLink";
 import { inputClass } from "../../components/ui/formStyles";
 import { ErrorState } from "../../components/ui/ErrorState";
 import { PageHeader } from "../../components/ui/PageHeader";
@@ -28,7 +29,15 @@ export function BatchesPage() {
     <>
       <PageHeader
         title="Batches"
-        description="A batch is a list of entitlements with a fixed budget. Generate a synthetic batch or upload a CSV, then define an experiment on it."
+        description="A batch is a list of students and what each is owed; its budget is exactly enough to pay everyone once. The quickest way to test one is New test."
+        actions={
+          <>
+            <HelpLink section="csv" label="CSV format" />
+            <ButtonLink to="/new" variant="primary">
+              New test
+            </ButtonLink>
+          </>
+        }
       />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
         <Card>
@@ -47,7 +56,7 @@ export function BatchesPage() {
               <thead>
                 <tr>
                   <Th>Name</Th>
-                  <Th className="text-right">Entitlements</Th>
+                  <Th className="text-right">Students</Th>
                   <Th className="text-right">Budget</Th>
                   <Th className="hidden sm:table-cell">Created</Th>
                 </tr>
@@ -79,7 +88,7 @@ export function BatchesPage() {
         <Card>
           <CardHeader
             title="New batch"
-            subtitle="Synthetic data only. Do not upload real names or personal data."
+            subtitle="Use synthetic data only — do not upload real student names, IDs or bank details."
           />
           <CardBody>
             <div

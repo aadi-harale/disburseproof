@@ -1,6 +1,7 @@
 import { cx } from "../../components/ui/cx";
 import type { Run } from "../../lib/api/types";
-import { formatINR, processorLabel } from "../../lib/format";
+import { formatINR } from "../../lib/format";
+import { PROCESSOR } from "../../lib/labels";
 import { runStory } from "../runs/runFacts";
 
 /** Head-to-head summary of two runs: verdict stamps, the story, and the three numbers that matter. */
@@ -25,7 +26,7 @@ function Side({ run }: { run: Run }) {
     <div className="rise min-w-0">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] font-semibold tracking-[0.14em] text-muted uppercase">
-          {processorLabel(run.processor)} processor
+          {PROCESSOR[run.processor].primary} processor
         </div>
         {run.verdict && (
           <span
@@ -39,7 +40,7 @@ function Side({ run }: { run: Run }) {
         )}
       </div>
       <p className="mt-3 min-h-[3.2em] text-[15px] leading-snug font-medium">
-        {runStory(run) ?? "Not evaluated yet."}
+        {runStory(run) ?? (run.is_terminal ? "No verdict for this run." : "Running now…")}
       </p>
       {s && (
         <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4">
@@ -49,7 +50,7 @@ function Side({ run }: { run: Run }) {
             hot={s.double_paid > 0}
             tone="text-twice"
           />
-          <Metric label="Paid ₹0" value={String(s.unpaid)} hot={s.unpaid > 0} tone="text-unpaid" />
+          <Metric label="Got ₹0" value={String(s.unpaid)} hot={s.unpaid > 0} tone="text-unpaid" />
           <Metric
             label="Misallocated"
             value={formatINR(s.misallocated_paise)}

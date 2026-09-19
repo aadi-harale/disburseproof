@@ -21,7 +21,7 @@ const COPY_OPTIONS = [5, 10, 20];
  * Map state invokes the worker directly). Check-then-write versus one transaction.
  */
 export function RaceLabPage() {
-  useDocumentTitle("Race Lab");
+  useDocumentTitle("Concurrency Lab");
   const [copies, setCopies] = useState(20);
   const [raceId, setRaceId] = useState<string | undefined>();
   const start = useStartRace();
@@ -35,29 +35,29 @@ export function RaceLabPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="P2 · Race Lab"
-        title="What happens when copies of one payment arrive at the same instant?"
-        description="Every copy is a different delivery of the same entitlement. Exactly one payment is correct."
+        eyebrow="Engineering deep-dive · Concurrency Lab"
+        title="What if 20 workers process the same payment at the same moment?"
+        description="Copies of one payment instruction for one student, released together. Exactly one payment is correct. This is separate from the home story's test."
       />
 
       <section className="stage grid gap-6 rounded-3xl p-5 ring-1 ring-white/10 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <div className="space-y-5">
           <RaceOption
             title="Naive: check, then write"
-            body="Reads the idempotency record, waits an injected 200 ms race window, then pays and writes the record. Copies that overlap inside the window all see “not paid”."
+            body="Checks whether the student is already paid, waits an injected 200 ms race window, then pays and records it. Copies that overlap inside the window all see “not paid” and all pay. (idempotency check, then write)"
             action={
               <Button
                 onClick={() => launch("naive")}
                 disabled={busy}
                 loading={start.isPending && start.variables?.processor === "naive"}
               >
-                <Icon name="play" /> Race the naive processor
+                <Icon name="play" /> Race check-then-write
               </Button>
             }
           />
           <RaceOption
             title="Protected: one transaction"
-            body="Claims the key, debits the budget, pays and records the delivery in a single DynamoDB TransactWriteItems. Only one copy can ever commit."
+            body="Records “paid”, takes the budget and makes the payment in one all-or-nothing database step. Only one copy can ever succeed. (DynamoDB TransactWriteItems)"
             action={
               <Button
                 variant="primary"
@@ -66,7 +66,7 @@ export function RaceLabPage() {
                 disabled={busy}
                 loading={start.isPending && start.variables?.processor === "protected"}
               >
-                <Icon name="shield" /> Race the protected processor
+                <Icon name="shield" /> Race protected
               </Button>
             }
           />
@@ -119,7 +119,7 @@ export function RaceLabPage() {
       <Card>
         <CardHeader
           title="Recent races"
-          subtitle="Payments committed for one entitlement; anything above 1 is a double payment"
+          subtitle="Payments made for one student; anything above 1 is a double payment"
         />
         {(races.data ?? []).length === 0 ? (
           <CardBody className="text-[13px] text-muted">No races yet.</CardBody>
@@ -146,7 +146,7 @@ export function RaceLabPage() {
                   onClick={() => setRaceId(race.run_id)}
                 >
                   <Td className="whitespace-nowrap">{formatDateTime(race.created_at)}</Td>
-                  <Td className="capitalize">{race.processor}</Td>
+                  <Td>{race.processor === "naive" ? "Check-then-write" : "Protected"}</Td>
                   <Td className="figures text-right">{race.copies}</Td>
                   <Td
                     className={cx(
@@ -244,7 +244,7 @@ function RaceResult({
           const paid = lane?.outcome === "COMMITTED";
           const suppressed = lane?.outcome === "DUPLICATE_SUPPRESSED";
           const label = lane
-            ? `Copy ${index + 1}: ${paid ? "paid" : suppressed ? "suppressed" : lane.outcome} at ${formatTimeMs(lane.processed_at)}`
+            ? `Copy ${index + 1}: ${paid ? "paid" : suppressed ? "repeat refused" : lane.outcome} at ${formatTimeMs(lane.processed_at)}`
             : `Copy ${index + 1}: pending`;
           return (
             <li key={index} title={label} aria-label={label}>
@@ -269,7 +269,7 @@ function RaceResult({
           <span className="size-3 rounded bg-paid" aria-hidden /> paid
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="size-3 rounded bg-accent-soft" aria-hidden /> duplicate suppressed
+          <span className="size-3 rounded bg-accent-soft" aria-hidden /> repeat refused
         </span>
         <span className="flex items-center gap-1.5">
           <span className="size-3 rounded bg-pending" aria-hidden /> pending

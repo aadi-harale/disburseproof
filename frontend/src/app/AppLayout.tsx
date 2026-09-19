@@ -13,11 +13,15 @@ import { useTheme } from "../lib/theme";
 /** Primary: where people do their own work. Engineering: deep-dives for reviewers. */
 const NAV = [
   { to: "/", label: "Home", end: true },
+  { to: "/new", label: "New test", end: false },
   { to: "/runs", label: "My runs", end: false },
   { to: "/batches", label: "Batches", end: false },
+  { to: "/docs", label: "Docs", end: false },
 ];
 const ENGINEERING = [
   { to: "/compare", label: "Compare", hint: "Two runs of the same test, side by side" },
+  { to: "/evidence", label: "AWS evidence", hint: "The service path of a run, read from AWS" },
+  { to: "/architecture", label: "Architecture", hint: "Each AWS service and why it is there" },
   { to: "/race", label: "Concurrency Lab", hint: "20 copies of one payment at the same moment" },
 ];
 const REPO_URL = "https://github.com/aadi-harale/disburseproof";
@@ -236,6 +240,9 @@ function Footer() {
           <strong className="font-semibold text-ink">
             Synthetic sandbox — no real money or personal data.
           </strong>
+          <Link to="/docs" className="hover:text-ink hover:underline">
+            Docs
+          </Link>
           <a href={REPO_URL} target="_blank" rel="noreferrer" className="hover:text-ink hover:underline">
             GitHub repo
           </a>
