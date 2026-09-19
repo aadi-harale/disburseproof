@@ -38,7 +38,7 @@ export class ApiError extends Error {
 
   /** Worth retrying automatically: throttled, network failure or a server error. */
   get isTransient(): boolean {
-    return this.status === 429 || this.status === 0 || this.status >= 500;
+    return this.status === 429 || this.status >= 500 || this.code === "NETWORK";
   }
 }
 
