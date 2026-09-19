@@ -398,14 +398,7 @@ export function Climax({
               </p>
             </div>
           </div>
-          <dl
-            className={cx(
-              "mt-6 grid gap-4",
-              pass
-                ? "grid-cols-2 sm:grid-cols-5 lg:grid-cols-3 xl:grid-cols-5"
-                : "grid-cols-2 sm:grid-cols-4",
-            )}
-          >
+          <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-5">
             {numbers.map((item) => (
               <BigFigure key={item.label} {...item} />
             ))}

@@ -664,7 +664,7 @@ function Protect({ pair, onReplay }: { pair: RunPair; onReplay: () => void }) {
       technical="idempotency key"
       intro="A repeat instruction is a new message, but it asks for the same entitlement. So the processor checks the entitlement, not the message."
     >
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div className="space-y-5">
           <div className="rounded-2xl border border-line bg-surface p-5">
             {identity ? (
@@ -774,10 +774,7 @@ function SameTestCard({ pair, onReplay }: { pair: RunPair; onReplay: () => void 
   const b = pair.protected;
   return (
     <div
-      className={cx(
-        "flex flex-col rounded-2xl border p-6",
-        pair.matched ? "glow-success border-paid/50" : "border-line",
-      )}
+      className={cx("rounded-2xl border p-6", pair.matched ? "glow-success border-paid/50" : "border-line")}
     >
       <div className="text-[13px] font-medium tracking-wide text-faint uppercase">
         {TERMS.fingerprint.primary}
@@ -795,15 +792,15 @@ function SameTestCard({ pair, onReplay }: { pair: RunPair; onReplay: () => void 
           ].map(([label, run]) => (
             <div key={label as string} className="flex flex-wrap items-baseline justify-between gap-2">
               <dt className="text-[14px] text-muted">{label as string}</dt>
-              <dd className="figures text-[16px] font-semibold" title={(run as Run).fingerprint}>
+              <dd className="figures text-[20px] font-semibold" title={(run as Run).fingerprint}>
                 {shortHash((run as Run).fingerprint, 16)}
               </dd>
             </div>
           ))}
           <div className="pt-1">
             {pair.matched ? (
-              <span className="inline-flex items-center gap-2 rounded-lg bg-paid px-3 py-1.5 text-[17px] font-semibold text-white">
-                <Icon name="check" size={18} strokeWidth={2.6} /> Match
+              <span className="inline-flex items-center gap-2 rounded-lg bg-paid px-4 py-2 text-[20px] font-semibold text-white">
+                <Icon name="check" size={20} strokeWidth={2.6} /> Match
               </span>
             ) : (
               <span className="inline-flex items-center gap-2 rounded-lg bg-unpaid px-3 py-1.5 text-[15px] font-semibold text-white">
@@ -821,7 +818,7 @@ function SameTestCard({ pair, onReplay }: { pair: RunPair; onReplay: () => void 
       <p className="mt-3 text-[12px] text-faint">
         {TERMS.fingerprint.technical} (SHA-256 of the test definition)
       </p>
-      <div className="mt-auto pt-6">
+      <div className="pt-6">
         <Button
           variant="primary"
           className="glow-accent h-12 w-full px-6 text-[16px]"
