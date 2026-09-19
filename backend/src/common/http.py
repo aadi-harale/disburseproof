@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
@@ -23,7 +24,8 @@ from aws_lambda_powertools import Logger
 
 from common.errors import DisburseProofError, NotFoundError, ValidationError, http_status_for
 
-MAX_BODY_BYTES = 1_000_000  # 500 CSV rows fit in well under 100 KB
+# 256 KB: far above a 500-row CSV (~40 KB), far below what would hurt a Lambda.
+MAX_BODY_BYTES = 256 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,10 +49,13 @@ class ApiRequest:
             request_id=str(event.get("requestContext", {}).get("requestId", "")),
         )
 
-    def path(self, name: str) -> str:
+    def path(self, name: str, pattern: re.Pattern[str] | None = None) -> str:
+        """A path parameter, optionally checked against its expected format (400 if not)."""
         value = self.path_params.get(name)
         if not value:
             raise ValidationError(f"Missing path parameter {name}")
+        if pattern is not None and not pattern.fullmatch(value):
+            raise ValidationError(f"{name} has an invalid format")
         return value
 
     def json_body(self) -> dict[str, Any]:

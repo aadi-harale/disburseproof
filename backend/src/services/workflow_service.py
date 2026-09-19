@@ -12,6 +12,7 @@ transaction that records each delivery) decides.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -29,6 +30,7 @@ from domain.fingerprint import canonical_json
 from domain.idempotency import key_entitlements
 from domain.injection import plan_phase
 from domain.models import (
+    DeliveryOutcome,
     FailureReason,
     InjectionPhase,
     InvariantReport,
@@ -39,6 +41,7 @@ from domain.models import (
 from domain.receipt import build_receipt, receipt_s3_key
 
 DRAIN_TIMEOUT_ERROR = "DRAIN_TIMEOUT"
+SAFE_ERROR_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.]{0,63}")
 MAX_FAILURE_MESSAGE = 1000
 
 
@@ -200,6 +203,38 @@ class WorkflowService:
         )
         return {"receipt_s3_key": key, "receipt_sha256": sha256}
 
+    def finish_race(self, run_id: str) -> dict[str, Any]:
+        """Race Lab: count what the parallel copies actually did, from the ledger."""
+        run = self._runs.require(run_id)
+        effects = self._ledger.list_effects(run_id)
+        deliveries = self._deliveries.list_deliveries(run_id)
+        amount = int(run.get("amount_paise", 0))
+        payments = len(effects)
+        outcomes = {outcome.value: 0 for outcome in DeliveryOutcome}
+        for delivery in deliveries:
+            outcomes[delivery.outcome.value] += 1
+        race = {
+            "copies": int(run.get("copies", 0)),
+            "recorded": len(deliveries),
+            "payments": payments,
+            "suppressed": outcomes[DeliveryOutcome.DUPLICATE_SUPPRESSED.value],
+            "extra_payments": max(0, payments - 1),
+            "overpaid_paise": max(0, payments - 1) * amount,
+        }
+        self._runs.update(
+            run_id,
+            {
+                "race": race,
+                # One entitlement, many copies: exactly one payment is the only correct result.
+                "verdict": "PASS" if payments == 1 else "FAIL",
+                "status": RunStatus.COMPLETED.value,
+                "phase": RunPhase.COMPLETE.value,
+                "finished_at": self._now(),
+            },
+            require_status=RunStatus.RUNNING,
+        )
+        return {"run_id": run_id, **race}
+
     def mark_failed(self, run_id: str, error: Mapping[str, Any]) -> dict[str, Any]:
         """Record why the workflow stopped. Never overwrites a COMPLETED run."""
         name = str(error.get("Error", "Unknown"))
@@ -209,8 +244,14 @@ class WorkflowService:
         elif name == InconsistentDeliveriesError.__name__:
             reason = FailureReason.INCONSISTENT_DELIVERIES
         else:
+            # Never surface a raw exception message: AWS errors can contain ARNs, table
+            # names or role names. The run record gets the error type only; the full
+            # error is in the workflow's CloudWatch log line for this run.
             reason = FailureReason.TASK_ERROR
-            message = f"{name}: {message}" if message else name
+            error_type = name if SAFE_ERROR_NAME.fullmatch(name) else "Error"
+            message = (
+                f"A workflow step failed ({error_type}). Details are in the run's CloudWatch logs."
+            )
         updates: dict[str, object] = {
             "status": RunStatus.FAILED.value,
             "phase": RunPhase.FAILED.value,

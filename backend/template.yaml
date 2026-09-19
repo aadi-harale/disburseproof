@@ -14,13 +14,13 @@ Parameters:
     Description: Environment name used in every resource name (disburseproof-<env>-<purpose>).
   MaxActiveRuns:
     Type: Number
-    Default: 2
+    Default: 3
     MinValue: 1
     MaxValue: 5
     Description: Cost guard for the public API. POST /runs returns 409 when this many runs are active.
   LogRetentionDays:
     Type: Number
-    Default: 14
+    Default: 7
     AllowedValues: [1, 3, 5, 7, 14, 30]
 
 Globals:
@@ -46,6 +46,12 @@ Globals:
         MAX_DRAIN_ITERATIONS: "90"
         POWERTOOLS_METRICS_NAMESPACE: DisburseProof
         POWERTOOLS_LOG_LEVEL: INFO
+        # Hourly cost guards on the public write endpoints (see domain/rate_limit.py).
+        RATE_LIMITS_TABLE: !Ref RateLimitsTable
+        RUNS_PER_HOUR: "30"
+        RACES_PER_HOUR: "30"
+        BATCHES_PER_HOUR: "20"
+        EXPERIMENTS_PER_HOUR: "60"
     Tags:
       project: disburseproof
       env: !Ref Env
@@ -74,6 +80,7 @@ Resources:
             - { AttributeName: entity_type, KeyType: HASH }
             - { AttributeName: created_at, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   ExperimentsTable:
     Type: AWS::DynamoDB::Table
@@ -92,6 +99,7 @@ Resources:
             - { AttributeName: batch_id, KeyType: HASH }
             - { AttributeName: created_at, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   RunsTable:
     Type: AWS::DynamoDB::Table
@@ -105,11 +113,12 @@ Resources:
       KeySchema:
         - { AttributeName: run_id, KeyType: HASH }
       GlobalSecondaryIndexes:
-        - IndexName: gsi_created
+        - IndexName: gsi_created # entity_type RUN (experiments) or RACE (Race Lab)
           KeySchema:
             - { AttributeName: entity_type, KeyType: HASH }
             - { AttributeName: created_at, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   LedgerTable:
     Type: AWS::DynamoDB::Table
@@ -122,6 +131,7 @@ Resources:
       KeySchema:
         - { AttributeName: run_id, KeyType: HASH }
         - { AttributeName: sk, KeyType: RANGE } # EFFECT#<effect_id>
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   IdempotencyTable:
     Type: AWS::DynamoDB::Table
@@ -132,6 +142,7 @@ Resources:
         - { AttributeName: idem_key, AttributeType: S }
       KeySchema:
         - { AttributeName: idem_key, KeyType: HASH } # <run_id>#<scheme>#<beneficiary>#<year>#INST-<n>
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
 
   DeliveriesTable:
     Type: AWS::DynamoDB::Table
@@ -144,6 +155,25 @@ Resources:
       KeySchema:
         - { AttributeName: run_id, KeyType: HASH }
         - { AttributeName: sk, KeyType: RANGE } # DELIVERY#<delivery_id>
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  # Hourly cost-guard counters for the public write endpoints (RATE#<bucket>#<yyyymmddhh>).
+  # A conditional ADD makes check-and-increment atomic; TTL deletes old windows.
+  RateLimitsTable:
+    Type: AWS::DynamoDB::Table
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_28
+            comment: Hourly counters that TTL deletes after two hours; nothing to restore.
+    Properties:
+      TableName: !Sub disburseproof-${Env}-rate-limits
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: expires_at, Enabled: true }
 
   # ---------------------------------------------------------------------------
   # SQS Standard: at-least-once, unordered delivery is the behaviour under test.
@@ -187,7 +217,28 @@ Resources:
         RestrictPublicBuckets: true
       BucketEncryption:
         ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } # SSE-S3, declared explicitly
+      # Versioning keeps every written receipt recoverable even if it were overwritten.
+      VersioningConfiguration: { Status: Enabled }
+
+  # Deny any request that does not use TLS. Receipts reach the browser only through
+  # the API (JSON body); the objects themselves are never public.
+  ReceiptsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReceiptsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt ReceiptsBucket.Arn
+              - !Sub ${ReceiptsBucket.Arn}/*
+            Condition:
+              Bool: { "aws:SecureTransport": "false" }
 
   # ---------------------------------------------------------------------------
   # CloudWatch Logs: one group per concern, with retention, so the evidence
@@ -203,6 +254,13 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /disburseproof/${Env}/workflow
+      RetentionInDays: !Ref LogRetentionDays
+
+  # API Gateway access log: request ID, source IP, route, status, latency. Never bodies.
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /disburseproof/${Env}/api-access
       RetentionInDays: !Ref LogRetentionDays
 
   ApiLogGroup:
@@ -352,7 +410,39 @@ Resources:
         - LambdaInvokePolicy: { FunctionName: !Ref MarkFailedFunction }
 
   # ---------------------------------------------------------------------------
-  # HTTP API. Public, no auth (single demo operator), throttled.
+  # Race Lab: a Map state releases N copies of one payment at once by invoking
+  # the worker directly (no SQS), so the naive processor's check-then-write race
+  # can be seen. Throttled invocations retry with backoff (the account's Lambda
+  # concurrency quota caps how many copies truly overlap).
+  # ---------------------------------------------------------------------------
+  FinishRaceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub disburseproof-${Env}-finish-race
+      Handler: handlers.workflow.finish_race.handler
+      LoggingConfig: { LogFormat: Text, LogGroup: !Ref WorkflowLogGroup }
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RunsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref LedgerTable }
+        - DynamoDBReadPolicy: { TableName: !Ref DeliveriesTable }
+
+  RaceWorkflow:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub disburseproof-${Env}-race-workflow
+      Type: STANDARD
+      DefinitionUri: statemachine/race_workflow.asl.json
+      DefinitionSubstitutions:
+        WorkerFunctionArn: !GetAtt WorkerFunction.Arn
+        FinishRaceFunctionArn: !GetAtt FinishRaceFunction.Arn
+        MarkFailedFunctionArn: !GetAtt MarkFailedFunction.Arn
+      Policies:
+        - LambdaInvokePolicy: { FunctionName: !Ref WorkerFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref FinishRaceFunction }
+        - LambdaInvokePolicy: { FunctionName: !Ref MarkFailedFunction }
+
+  # ---------------------------------------------------------------------------
+  # HTTP API. Public, no auth (single demo operator; see docs/adr/0005), throttled.
   # ---------------------------------------------------------------------------
   HttpApi:
     Type: AWS::Serverless::HttpApi
@@ -362,11 +452,14 @@ Resources:
       DefaultRouteSettings:
         ThrottlingRateLimit: 10
         ThrottlingBurstLimit: 20
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","method":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","latencyMs":"$context.responseLatency","integrationError":"$context.integrationErrorMessage"}'
+      # Only the Amplify site and the local dev server. No "*" origin.
       CorsConfiguration:
         AllowOrigins:
           - !Sub https://main.${WebApp.DefaultDomain}
           - http://localhost:5173
-          - http://localhost:4173
         AllowMethods: [GET, POST, OPTIONS]
         AllowHeaders: [content-type]
         MaxAge: 600
@@ -380,6 +473,7 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref BatchesTable }
         - DynamoDBReadPolicy: { TableName: !Ref ExperimentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref RateLimitsTable }
       Events:
         CreateBatch: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /batches } }
         ListBatches: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /batches } }
@@ -394,6 +488,7 @@ Resources:
       Policies:
         - DynamoDBReadPolicy: { TableName: !Ref BatchesTable }
         - DynamoDBCrudPolicy: { TableName: !Ref ExperimentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref RateLimitsTable }
       Events:
         CreateExperiment: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /experiments } }
         GetExperiment: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/experiments/{experiment_id}" } }
@@ -414,6 +509,7 @@ Resources:
         - DynamoDBReadPolicy: { TableName: !Ref BatchesTable }
         - DynamoDBReadPolicy: { TableName: !Ref LedgerTable }
         - DynamoDBReadPolicy: { TableName: !Ref DeliveriesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref RateLimitsTable }
         - StepFunctionsExecutionPolicy: { StateMachineName: !GetAtt RunWorkflow.Name }
         - Statement:
             - Effect: Allow
@@ -428,6 +524,31 @@ Resources:
           Type: HttpApi
           Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/students/{beneficiary_id}" }
         GetOverview: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /overview } }
+
+  RacesApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub disburseproof-${Env}-api-races
+      Description: Race Lab (naive vs protected under parallel copies of one payment).
+      Handler: handlers.api.races.handler
+      LoggingConfig: { LogFormat: Text, LogGroup: !Ref ApiLogGroup }
+      Environment:
+        Variables:
+          RACE_STATE_MACHINE_ARN: !Ref RaceWorkflow
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref RunsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref LedgerTable }
+        - DynamoDBReadPolicy: { TableName: !Ref DeliveriesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref RateLimitsTable }
+        - StepFunctionsExecutionPolicy: { StateMachineName: !GetAtt RaceWorkflow.Name }
+        - Statement:
+            - Effect: Allow
+              Action: states:ListExecutions
+              Resource: !Ref RaceWorkflow
+      Events:
+        StartRace: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /race } }
+        ListRaces: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /races } }
+        GetRace: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/races/{run_id}" } }
 
   ReceiptsApiFunction:
     Type: AWS::Serverless::Function
@@ -518,6 +639,11 @@ Outputs:
     Value: !GetAtt WebApp.AppId
   StateMachineArn:
     Value: !Ref RunWorkflow
+  RaceStateMachineArn:
+    Value: !Ref RaceWorkflow
+  ReceiptsBucketRegionalDomain:
+    Description: Used by the security smoke test to prove receipt objects are not publicly readable
+    Value: !GetAtt ReceiptsBucket.RegionalDomainName
   WorkerFunctionName:
     Value: !Ref WorkerFunction
   DeliveriesQueueUrl:

@@ -58,13 +58,30 @@ class Settings:
     # workflow task functions cannot: the state machine references their ARNs, so
     # giving them the state machine ARN would create a CloudFormation cycle.
     state_machine_arn: str | None
+    race_state_machine_arn: str | None
     worker_log_group: str | None
     workflow_log_group: str | None
+    # Cost guards for the public, unauthenticated write endpoints (per UTC hour).
+    rate_limits_table: str | None
+    runs_per_hour: int
+    races_per_hour: int
+    batches_per_hour: int
+    experiments_per_hour: int
 
     def require_state_machine_arn(self) -> str:
         if not self.state_machine_arn:
             raise ConfigError("STATE_MACHINE_ARN is not configured for this function")
         return self.state_machine_arn
+
+    def require_race_state_machine_arn(self) -> str:
+        if not self.race_state_machine_arn:
+            raise ConfigError("RACE_STATE_MACHINE_ARN is not configured for this function")
+        return self.race_state_machine_arn
+
+    def require_rate_limits_table(self) -> str:
+        if not self.rate_limits_table:
+            raise ConfigError("RATE_LIMITS_TABLE is not configured for this function")
+        return self.rate_limits_table
 
 
 @cache
@@ -82,9 +99,15 @@ def get_settings() -> Settings:
         deliveries_queue_url=_required("DELIVERIES_QUEUE_URL"),
         deliveries_dlq_url=_required("DELIVERIES_DLQ_URL"),
         receipts_bucket=_required("RECEIPTS_BUCKET"),
-        max_active_runs=_int("MAX_ACTIVE_RUNS", 2),
+        max_active_runs=_int("MAX_ACTIVE_RUNS", 3),
         max_drain_iterations=_int("MAX_DRAIN_ITERATIONS", 90),
         state_machine_arn=_optional("STATE_MACHINE_ARN"),
+        race_state_machine_arn=_optional("RACE_STATE_MACHINE_ARN"),
         worker_log_group=_optional("WORKER_LOG_GROUP"),
         workflow_log_group=_optional("WORKFLOW_LOG_GROUP"),
+        rate_limits_table=_optional("RATE_LIMITS_TABLE"),
+        runs_per_hour=_int("RUNS_PER_HOUR", 30),
+        races_per_hour=_int("RACES_PER_HOUR", 30),
+        batches_per_hour=_int("BATCHES_PER_HOUR", 20),
+        experiments_per_hour=_int("EXPERIMENTS_PER_HOUR", 60),
     )

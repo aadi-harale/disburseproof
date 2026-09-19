@@ -9,7 +9,8 @@ from typing import Any
 
 from common.http import ApiRequest, dispatch
 from common.logging import get_logger
-from services.container import repositories
+from domain.requests import EXPERIMENT_ID_PATTERN
+from services.container import rate_limiter, repositories, settings
 from services.experiment_service import ExperimentService
 
 logger = get_logger("api-experiments")
@@ -17,7 +18,12 @@ logger = get_logger("api-experiments")
 
 def _service() -> ExperimentService:
     repos = repositories()
-    return ExperimentService(repos.batches, repos.experiments)
+    return ExperimentService(
+        repos.batches,
+        repos.experiments,
+        limiter=rate_limiter(),
+        experiments_per_hour=settings().experiments_per_hour,
+    )
 
 
 def create_experiment(request: ApiRequest) -> tuple[int, object]:
@@ -25,7 +31,7 @@ def create_experiment(request: ApiRequest) -> tuple[int, object]:
 
 
 def get_experiment(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().get(request.path("experiment_id"))
+    return 200, _service().get(request.path("experiment_id", EXPERIMENT_ID_PATTERN))
 
 
 ROUTES = {

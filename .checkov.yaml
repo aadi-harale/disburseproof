@@ -1,0 +1,32 @@
+# Checkov (IaC scan of backend/template.yaml, which Checkov parses as CloudFormation
+# including AWS::Serverless::* resources). Every skipped check has a reason; each is
+# also listed as an accepted risk in the README's threat model.
+framework:
+  - cloudformation
+compact: true
+quiet: true
+skip-check:
+  # Reserved concurrency: deliberately not used. New accounts can have a Lambda
+  # concurrency quota as low as 10; reserving it would starve other functions.
+  # The SQS event source's MaximumConcurrency: 5 caps the worker instead.
+  - CKV_AWS_115
+  # Lambda DLQ (async-invocation dead-letter queue): our functions are invoked
+  # synchronously (API Gateway, Step Functions) or by an SQS event source mapping,
+  # and the SQS queue has its own DLQ (maxReceiveCount 5). Not applicable.
+  - CKV_AWS_116
+  # Lambda in a VPC: accepted risk. A VPC would need NAT gateways (~USD 33/month
+  # each) to reach AWS APIs; the code makes no outbound calls beyond AWS services.
+  - CKV_AWS_117
+  # Customer-managed KMS keys for DynamoDB and CloudWatch Logs: accepted. Data is
+  # synthetic; AWS-owned-key encryption at rest is on by default and free.
+  - CKV_AWS_119
+  - CKV_AWS_158
+  # Lambda environment-variable encryption with a CMK: variables hold only resource
+  # names and limits, never secrets (the backend needs no secrets; IAM roles only).
+  - CKV_AWS_173
+  # S3 server access logging: would need a second bucket; receipts are written only
+  # by one role and read only through the API. Accepted for the sandbox.
+  - CKV_AWS_18
+  # SQS encryption: the queues use SqsManagedSseEnabled: true (SSE-SQS). This check
+  # only recognises KMS keys, so it is a false positive here.
+  - CKV_AWS_27

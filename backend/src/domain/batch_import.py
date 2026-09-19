@@ -19,15 +19,18 @@ from common.errors import FieldError, ValidationError
 from domain.demo_data import MAX_GENERATED_ENTITLEMENTS, generate_entitlements
 from domain.models import Entitlement
 from domain.money import MAX_AMOUNT_PAISE, is_valid_amount_paise
+from domain.requests import BUSINESS_ID_PATTERN
 
 CSV_COLUMNS = ("beneficiary_id", "display_name", "amount_paise", "installment")
 MAX_ROWS = 500
-MAX_DISPLAY_NAME_LENGTH = 80
+MAX_DISPLAY_NAME_LENGTH = 60
 MAX_INSTALLMENT = 99
-# No '#': it separates the parts of an entitlement key.
-BENEFICIARY_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
+# Capital letters, digits and '-' only; no '#' (it separates entitlement-key parts).
+BENEFICIARY_ID_PATTERN = BUSINESS_ID_PATTERN
+# A name starts with a letter, then letters, spaces, ".", "'" and "-" only. Starting with a
+# letter also means no cell can begin with =, +, - or @ (spreadsheet formula injection).
+DISPLAY_NAME_PATTERN = re.compile(r"[^\W\d_](?:[^\W\d_]|[ .'-])*")  # [^\W\d_] = any Unicode letter
 DIGITS = re.compile(r"[0-9]{1,15}")
-CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(slots=True)
@@ -56,7 +59,7 @@ def _parse_row(line: int, values: dict[str, str]) -> tuple[Entitlement | None, l
 
     beneficiary = values["beneficiary_id"]
     if not BENEFICIARY_ID_PATTERN.fullmatch(beneficiary):
-        errors.append(FieldError("beneficiary_id", "1-32 letters, digits, '-' or '_'", line))
+        errors.append(FieldError("beneficiary_id", "1-32 capital letters, digits or '-'", line))
 
     name = values["display_name"]
     if not name:
@@ -65,8 +68,14 @@ def _parse_row(line: int, values: dict[str, str]) -> tuple[Entitlement | None, l
         errors.append(
             FieldError("display_name", f"at most {MAX_DISPLAY_NAME_LENGTH} characters", line)
         )
-    elif CONTROL_CHARACTERS.search(name):
-        errors.append(FieldError("display_name", "contains control characters", line))
+    elif not DISPLAY_NAME_PATTERN.fullmatch(name):
+        errors.append(
+            FieldError(
+                "display_name",
+                "letters, spaces, '.', an apostrophe and '-' only; start with a letter",
+                line,
+            )
+        )
 
     amount_text = values["amount_paise"]
     amount = int(amount_text) if DIGITS.fullmatch(amount_text) else None

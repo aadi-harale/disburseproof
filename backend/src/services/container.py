@@ -16,6 +16,7 @@ from adapters.dynamodb.deliveries_repo import DeliveriesRepository
 from adapters.dynamodb.disbursement_store import DynamoDisbursementStore
 from adapters.dynamodb.experiments_repo import ExperimentsRepository
 from adapters.dynamodb.ledger_repo import LedgerRepository
+from adapters.dynamodb.rate_limits_repo import RateLimiter
 from adapters.dynamodb.runs_repo import RunsRepository
 from adapters.s3_receipts import S3Receipts
 from adapters.sqs_publisher import SqsPublisher, queue_depths
@@ -74,3 +75,8 @@ def workflow_service() -> WorkflowService:
         queue_depths=lambda: queue_depths(config.deliveries_queue_url, config.deliveries_dlq_url),
         max_drain_iterations=config.max_drain_iterations,
     )
+
+
+@cache
+def rate_limiter() -> RateLimiter:
+    return RateLimiter(settings().require_rate_limits_table())

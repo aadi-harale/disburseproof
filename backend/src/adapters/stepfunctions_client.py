@@ -45,12 +45,12 @@ class StepFunctionsClient:
         self._state_machine_arn = state_machine_arn
         self._client = client or sfn_client()
 
-    def start_run(self, run_id: str) -> str:
+    def start_run(self, run_id: str, extra_input: dict[str, Any] | None = None) -> str:
         try:
             response = self._client.start_execution(
                 stateMachineArn=self._state_machine_arn,
                 name=run_id,
-                input=json.dumps({"run_id": run_id}),
+                input=json.dumps({"run_id": run_id, **(extra_input or {})}),
             )
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") == "ExecutionAlreadyExists":

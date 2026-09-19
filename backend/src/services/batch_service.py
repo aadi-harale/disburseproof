@@ -1,19 +1,21 @@
 """Batch use cases: create (generate or CSV, with a dry-run preview), list, get.
 
-Owns: orchestrating domain/batch_import.py and the Batches repository.
+Owns: orchestrating domain/batch_import.py, the Batches repository and the hourly
+cost guard for batch creation (each batch writes up to 501 DynamoDB items).
 Must never: talk to AWS directly (repositories do).
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from adapters.dynamodb.batches_repo import BatchesRepository
 from adapters.dynamodb.experiments_repo import ExperimentsRepository
+from adapters.dynamodb.rate_limits_repo import RateLimiter
 from common.clock import utc_now_iso
-from common.errors import FieldError, ValidationError
+from common.errors import ValidationError
 from common.ids import new_batch_id
 from domain.batch_import import MAX_ROWS, generated_entitlements, parse_entitlements_csv
 from domain.demo_data import (
@@ -26,12 +28,11 @@ from domain.demo_data import (
 )
 from domain.fingerprint import batch_content_sha256
 from domain.models import BatchMeta, Entitlement
-from domain.validation import optional_str, require_int
+from domain.requests import parse_create_batch
 from services.views import public_batch, public_experiment
 
-SCHEME_ID_PATTERN = re.compile(r"[A-Z0-9][A-Z0-9-]{1,31}")
-ACADEMIC_YEAR_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}")
 MAX_CSV_CHARACTERS = 200_000
+DEFAULT_SCHEME_ID = "DEMO-SCHEME"
 
 
 class BatchService:
@@ -40,58 +41,44 @@ class BatchService:
         batches: BatchesRepository,
         experiments: ExperimentsRepository,
         *,
+        limiter: RateLimiter | None = None,
+        batches_per_hour: int = 20,
         now: Callable[[], str] = utc_now_iso,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         new_id: Callable[[], str] = new_batch_id,
     ) -> None:
         self._batches = batches
         self._experiments = experiments
+        self._limiter = limiter
+        self._batches_per_hour = batches_per_hour
         self._now = now
+        self._clock = clock
         self._new_id = new_id
 
     def create(self, body: Mapping[str, Any]) -> tuple[int, dict[str, Any]]:
         """POST /batches. `dry_run: true` validates a CSV and returns a preview without saving."""
-        has_generate, has_csv = "generate" in body, "csv" in body
-        if has_generate == has_csv:
-            raise ValidationError("Send exactly one of `generate` or `csv`")
-        name = optional_str(body, "name", max_length=100)
-        scheme_id = optional_str(body, "scheme_id", max_length=32) or "DEMO-SCHEME"
-        academic_year = optional_str(body, "academic_year", max_length=7) or DEMO_ACADEMIC_YEAR
-        if not SCHEME_ID_PATTERN.fullmatch(scheme_id):
-            raise ValidationError(
-                "scheme_id must be 2-32 capital letters, digits or '-'",
-                details=[FieldError("scheme_id", "has an invalid format")],
-            )
-        if not ACADEMIC_YEAR_PATTERN.fullmatch(academic_year):
-            raise ValidationError(
-                "academic_year must look like 2026-27",
-                details=[FieldError("academic_year", "must look like 2026-27")],
-            )
+        request = parse_create_batch(body, max_csv_characters=MAX_CSV_CHARACTERS)
+        scheme_id = request.scheme_id or DEFAULT_SCHEME_ID
+        academic_year = request.academic_year or DEMO_ACADEMIC_YEAR
 
-        if has_generate:
-            spec = body["generate"]
-            if not isinstance(spec, dict):
-                raise ValidationError("generate must be an object with count and amount_paise")
-            entitlements = generated_entitlements(
-                require_int(spec, "count", minimum=1), require_int(spec, "amount_paise", minimum=1)
-            )
+        if request.csv is None:
+            assert request.count is not None and request.amount_paise is not None
+            entitlements = generated_entitlements(request.count, request.amount_paise)
             source, default_name = "generated", f"Generated batch ({len(entitlements)} students)"
         else:
-            text = body["csv"]
-            if not isinstance(text, str) or len(text) > MAX_CSV_CHARACTERS:
-                raise ValidationError(
-                    f"csv must be CSV text of at most {MAX_CSV_CHARACTERS} characters"
-                )
-            report = parse_entitlements_csv(text)
-            preview = {
-                "valid": report.is_valid,
-                "rows": [row.to_dict() for row in report.rows],
-                "errors": [error.to_dict() for error in report.errors],
-                "entitlements": len(report.entitlements),
-                "total_budget_paise": sum(e.amount_paise for e in report.entitlements),
-                "max_rows": MAX_ROWS,
-            }
-            if body.get("dry_run") is True:
-                return 200, {"preview": preview}
+            report = parse_entitlements_csv(request.csv)
+            if request.dry_run:
+                # A preview writes nothing, so it does not use the hourly allowance.
+                return 200, {
+                    "preview": {
+                        "valid": report.is_valid,
+                        "rows": [row.to_dict() for row in report.rows],
+                        "errors": [error.to_dict() for error in report.errors],
+                        "entitlements": len(report.entitlements),
+                        "total_budget_paise": sum(e.amount_paise for e in report.entitlements),
+                        "max_rows": MAX_ROWS,
+                    }
+                }
             if not report.is_valid:
                 raise ValidationError(
                     f"The CSV has {len(report.errors)} problem(s); nothing was saved",
@@ -100,9 +87,13 @@ class BatchService:
             entitlements = list(report.entitlements)
             source, default_name = "csv", f"Uploaded batch ({len(entitlements)} entitlements)"
 
+        if self._limiter is not None:
+            self._limiter.consume(
+                "batches", limit=self._batches_per_hour, now=self._clock(), what="new batches"
+            )
         meta = self._build_meta(
             batch_id=self._new_id(),
-            name=name or default_name,
+            name=request.name or default_name,
             scheme_id=scheme_id,
             academic_year=academic_year,
             entitlements=entitlements,
@@ -149,7 +140,11 @@ class BatchService:
         }
 
     def ensure_demo_batch(self) -> BatchMeta:
-        """Write the golden demo batch. Content is fixed, so rewriting it is harmless."""
+        """Write the golden demo batch (deploy-time seed only; no API route reaches this).
+
+        Content is fixed, so rewriting it on every deploy is harmless. The public API
+        can never target this ID: new batch IDs are always generated server-side.
+        """
         entitlements = demo_entitlements()
         meta = self._build_meta(
             batch_id=DEMO_BATCH_ID,

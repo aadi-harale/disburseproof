@@ -9,16 +9,18 @@ Must never: compute a verdict (the workflow's Evaluate step does, once).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from adapters.dynamodb.batches_repo import BatchesRepository
 from adapters.dynamodb.deliveries_repo import DeliveriesRepository
 from adapters.dynamodb.experiments_repo import ExperimentsRepository
 from adapters.dynamodb.ledger_repo import LedgerRepository
+from adapters.dynamodb.rate_limits_repo import RateLimiter
 from adapters.dynamodb.runs_repo import RunsRepository
 from adapters.stepfunctions_client import StepFunctionsClient
 from common.clock import utc_now_iso
-from common.errors import ConflictError, NotFoundError, ValidationError
+from common.errors import ConflictError, NotFoundError
 from common.ids import new_run_id
 from domain.demo_data import DEMO_BATCH_ID
 from domain.idempotency import key_entitlements
@@ -32,8 +34,8 @@ from domain.models import (
     RunStatus,
     StudentState,
 )
+from domain.requests import parse_start_run
 from domain.student_state import derive_student_views
-from domain.validation import require_enum, require_str
 from services.views import public_batch, public_experiment, public_run
 
 EXPERIMENT_PROCESSORS = (ProcessorName.VULNERABLE, ProcessorName.PROTECTED)
@@ -50,6 +52,9 @@ class RunService:
         deliveries: DeliveriesRepository,
         step_functions: StepFunctionsClient | None,
         max_active_runs: int,
+        limiter: RateLimiter | None = None,
+        runs_per_hour: int = 30,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         region: str = "",
         now: Callable[[], str] = utc_now_iso,
         new_id: Callable[[], str] = new_run_id,
@@ -61,6 +66,9 @@ class RunService:
         self._deliveries = deliveries
         self._step_functions = step_functions
         self._max_active_runs = max_active_runs
+        self._limiter = limiter
+        self._runs_per_hour = runs_per_hour
+        self._clock = clock
         self._region = region
         self._now = now
         self._new_id = new_id
@@ -72,10 +80,7 @@ class RunService:
 
     def start(self, body: Mapping[str, Any]) -> tuple[int, dict[str, Any]]:
         """POST /runs: create the Run record, then start its execution (name = run_id)."""
-        experiment_id = require_str(body, "experiment_id", max_length=64)
-        processor = require_enum(body, "processor", ProcessorName)
-        if processor not in EXPERIMENT_PROCESSORS:
-            raise ValidationError("processor must be 'vulnerable' or 'protected'")
+        experiment_id, processor = parse_start_run(body)
         if self._step_functions is None:
             raise RuntimeError("Step Functions client is not configured")
 
@@ -86,6 +91,9 @@ class RunService:
             raise ConflictError(
                 f"{self._max_active_runs} runs are already in progress. Try again when one finishes."
             )
+        # Cost guard: at most N runs started per UTC hour, checked and counted atomically.
+        if self._limiter is not None:
+            self._limiter.consume("runs", limit=self._runs_per_hour, now=self._clock(), what="runs")
 
         run_id, now = self._new_id(), self._now()
         run = {

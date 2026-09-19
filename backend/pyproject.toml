@@ -55,5 +55,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
-testpaths = ["tests/unit"]
+testpaths = ["tests/unit", "tests/security"]
 addopts = "-q"

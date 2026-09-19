@@ -12,6 +12,7 @@ from typing import Any
 from adapters.s3_receipts import S3Receipts
 from common.http import ApiRequest, dispatch
 from common.logging import get_logger
+from domain.requests import RUN_ID_PATTERN
 from services.container import repositories, settings
 from services.evidence_service import EvidenceService
 
@@ -27,11 +28,11 @@ def _service() -> EvidenceService:
 
 
 def get_receipt(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().receipt(request.path("run_id"))
+    return 200, _service().receipt(request.path("run_id", RUN_ID_PATTERN))
 
 
 def get_evidence(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().evidence(request.path("run_id"))
+    return 200, _service().evidence(request.path("run_id", RUN_ID_PATTERN))
 
 
 ROUTES = {

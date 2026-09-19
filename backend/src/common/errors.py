@@ -58,11 +58,18 @@ class ConflictError(DisburseProofError):
     code = "CONFLICT"
 
 
+class RateLimitedError(DisburseProofError):
+    """A cost guard refused the request (e.g. more than 30 runs started this hour)."""
+
+    code = "RATE_LIMITED"
+
+
 # The only place an error type becomes an HTTP status. Anything not listed is a 500.
 HTTP_STATUS_BY_ERROR: dict[type[DisburseProofError], int] = {
     ValidationError: 400,
     NotFoundError: 404,
     ConflictError: 409,
+    RateLimitedError: 429,
 }
 
 

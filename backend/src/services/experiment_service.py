@@ -8,10 +8,12 @@ Must never: talk to AWS directly (repositories do).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from adapters.dynamodb.batches_repo import BatchesRepository
 from adapters.dynamodb.experiments_repo import ExperimentsRepository
+from adapters.dynamodb.rate_limits_repo import RateLimiter
 from common.clock import utc_now_iso
 from common.errors import ConflictError
 from domain.demo_data import DEMO_BATCH_ID, DEMO_CREATED_AT, DEMO_DUPLICATE_COUNT, DEMO_SEED
@@ -22,7 +24,7 @@ from domain.experiment import (
     experiment_id_for,
 )
 from domain.fingerprint import batch_content_sha256, canonical_json, fingerprint
-from domain.validation import require_int, require_str
+from domain.requests import parse_create_experiment
 from services.views import public_experiment
 
 
@@ -32,17 +34,28 @@ class ExperimentService:
         batches: BatchesRepository,
         experiments: ExperimentsRepository,
         *,
+        limiter: RateLimiter | None = None,
+        experiments_per_hour: int = 60,
         now: Callable[[], str] = utc_now_iso,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._batches = batches
         self._experiments = experiments
+        self._limiter = limiter
+        self._experiments_per_hour = experiments_per_hour
         self._now = now
+        self._clock = clock
 
     def create(self, body: Mapping[str, Any]) -> tuple[int, dict[str, Any]]:
         """POST /experiments. Returns 201 when new, 200 when the same definition exists."""
-        batch_id = require_str(body, "batch_id", max_length=64)
-        seed = require_str(body, "seed", max_length=64)
-        duplicate_count = require_int(body, "duplicate_count", minimum=1)
+        batch_id, seed, duplicate_count = parse_create_experiment(body)
+        if self._limiter is not None:
+            self._limiter.consume(
+                "experiments",
+                limit=self._experiments_per_hour,
+                now=self._clock(),
+                what="experiments",
+            )
         experiment, created = self.define(batch_id, seed, duplicate_count, self._now())
         return (201 if created else 200), {"experiment": public_experiment(experiment)}
 

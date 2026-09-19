@@ -12,7 +12,8 @@ from typing import Any
 from adapters.stepfunctions_client import StepFunctionsClient
 from common.http import ApiRequest, dispatch
 from common.logging import get_logger
-from services.container import repositories, settings
+from domain.requests import BUSINESS_ID_PATTERN, RUN_ID_PATTERN
+from services.container import rate_limiter, repositories, settings
 from services.run_service import RunService
 
 logger = get_logger("api-runs")
@@ -30,6 +31,8 @@ def _service() -> RunService:
         deliveries=repos.deliveries,
         step_functions=StepFunctionsClient(config.require_state_machine_arn()),
         max_active_runs=config.max_active_runs,
+        limiter=rate_limiter(),
+        runs_per_hour=config.runs_per_hour,
         region=config.aws_region,
     )
 
@@ -43,15 +46,17 @@ def list_runs(request: ApiRequest) -> tuple[int, object]:
 
 
 def get_run(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().get(request.path("run_id"))
+    return 200, _service().get(request.path("run_id", RUN_ID_PATTERN))
 
 
 def list_students(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().students(request.path("run_id"))
+    return 200, _service().students(request.path("run_id", RUN_ID_PATTERN))
 
 
 def get_student(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().student_detail(request.path("run_id"), request.path("beneficiary_id"))
+    return 200, _service().student_detail(
+        request.path("run_id", RUN_ID_PATTERN), request.path("beneficiary_id", BUSINESS_ID_PATTERN)
+    )
 
 
 def get_overview(_: ApiRequest) -> tuple[int, object]:

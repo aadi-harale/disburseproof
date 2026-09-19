@@ -7,20 +7,25 @@ __pycache__/
 .ruff_cache/
 .coverage
 
-# AWS SAM build output
-backend/.aws-sam/
+# AWS SAM build output and local config overrides (never commit credentials or profiles)
+.aws-sam/
+samconfig.local.toml
+samconfig.*.local.toml
 
-# Node / frontend
+# Node / frontend build output
 node_modules/
-frontend/dist/
+dist/
 *.tsbuildinfo
 
-# Local environment and secrets (never commit credentials)
+# Local environment files and secrets
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
 
-# Deploy artefacts
+# Deploy artefacts and OS noise
 *.zip
 stack-outputs*.json
 .DS_Store

@@ -67,3 +67,28 @@ def require_enum[E: Enum](data: Mapping[str, object], field: str, enum_type: typ
     except ValueError:
         allowed = ", ".join(str(member.value) for member in enum_type)
         raise _fail(field, f"must be one of: {allowed}") from None
+
+
+def reject_unknown_fields(
+    data: Mapping[str, object], allowed: set[str], *, where: str = "body"
+) -> None:
+    """Strict schemas: a field we do not know is an error, not something to ignore.
+
+    Silently ignoring unknown fields hides client bugs (a typo in `duplicate_count`
+    would quietly fall back to a default) and widens what an attacker can probe.
+    """
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        # Field names come from the caller: cap how much of them we echo back.
+        shown = [name[:40] for name in unknown[:10]]
+        raise ValidationError(
+            f"Unknown field(s) in {where}: {', '.join(shown)}",
+            details=[FieldError(name, "is not an accepted field") for name in shown],
+        )
+
+
+def optional_bool(data: Mapping[str, object], field: str) -> bool:
+    value = data.get(field, False)
+    if not isinstance(value, bool):
+        raise _fail(field, "must be true or false")
+    return value

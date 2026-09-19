@@ -9,15 +9,21 @@ from typing import Any
 
 from common.http import ApiRequest, dispatch
 from common.logging import get_logger
+from domain.requests import BATCH_ID_PATTERN
 from services.batch_service import BatchService
-from services.container import repositories
+from services.container import rate_limiter, repositories, settings
 
 logger = get_logger("api-batches")
 
 
 def _service() -> BatchService:
     repos = repositories()
-    return BatchService(repos.batches, repos.experiments)
+    return BatchService(
+        repos.batches,
+        repos.experiments,
+        limiter=rate_limiter(),
+        batches_per_hour=settings().batches_per_hour,
+    )
 
 
 def create_batch(request: ApiRequest) -> tuple[int, object]:
@@ -29,7 +35,7 @@ def list_batches(_: ApiRequest) -> tuple[int, object]:
 
 
 def get_batch(request: ApiRequest) -> tuple[int, object]:
-    return 200, _service().get(request.path("batch_id"))
+    return 200, _service().get(request.path("batch_id", BATCH_ID_PATTERN))
 
 
 ROUTES = {

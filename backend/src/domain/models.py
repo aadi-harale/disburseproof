@@ -225,7 +225,9 @@ class DisbursementEvent:
             installment=require_int(body, "installment", minimum=1),
             amount_paise=require_int(body, "amount_paise", minimum=1),
             phase=require_enum(body, "phase", InjectionPhase),
-            copy_index=require_int(body, "copy_index", minimum=1, maximum=2),
+            copy_index=require_int(
+                body, "copy_index", minimum=1, maximum=20
+            ),  # 2 in experiments, up to 20 in a race
             duplicate_of=optional_str(body, "duplicate_of"),
         )
 

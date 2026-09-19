@@ -20,6 +20,7 @@ from common.errors import ConflictError, NotFoundError
 from domain.models import RunPhase, RunStatus
 
 RUN_ENTITY_TYPE = "RUN"
+RACE_ENTITY_TYPE = "RACE"  # Race Lab runs are listed separately from experiment runs
 CREATED_INDEX = "gsi_created"
 
 
@@ -28,8 +29,8 @@ class RunsRepository:
         self._table = table
         self._client = client or dynamodb_client()
 
-    def create(self, run: Mapping[str, object]) -> None:
-        item = {**run, "entity_type": RUN_ENTITY_TYPE}
+    def create(self, run: Mapping[str, object], *, entity_type: str = RUN_ENTITY_TYPE) -> None:
+        item = {**run, "entity_type": entity_type}
         self._client.put_item(
             TableName=self._table,
             Item=to_item(item),
@@ -49,13 +50,15 @@ class RunsRepository:
             raise NotFoundError(f"Run {run_id} not found")
         return run
 
-    def list_recent(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_recent(
+        self, limit: int = 50, *, entity_type: str = RUN_ENTITY_TYPE
+    ) -> list[dict[str, Any]]:
         """Newest first, via the sparse `gsi_created` index (entity_type, created_at)."""
         expression = Expression()
         response = self._client.query(
             TableName=self._table,
             IndexName=CREATED_INDEX,
-            KeyConditionExpression=f"{expression.name('entity_type')} = {expression.value('type', RUN_ENTITY_TYPE)}",
+            KeyConditionExpression=f"{expression.name('entity_type')} = {expression.value('type', entity_type)}",
             ScanIndexForward=False,
             Limit=limit,
             **expression.request_args(),

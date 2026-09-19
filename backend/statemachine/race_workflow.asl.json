@@ -1,0 +1,86 @@
+{
+  "Comment": "DisburseProof Race Lab: release N copies of one payment at once by invoking the worker directly (Map, MaxConcurrency 20). Throttled invocations retry with jittered backoff.",
+  "StartAt": "RaceCopies",
+  "States": {
+    "RaceCopies": {
+      "Type": "Map",
+      "ItemsPath": "$.deliveries",
+      "MaxConcurrency": 20,
+      "ItemProcessor": {
+        "ProcessorConfig": { "Mode": "INLINE" },
+        "StartAt": "InvokeWorker",
+        "States": {
+          "InvokeWorker": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${WorkerFunctionArn}",
+              "Payload": { "event.$": "$" }
+            },
+            "ResultSelector": { "status.$": "$.Payload.status" },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.TooManyRequestsException",
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 6,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "CopyFailed" }],
+            "End": true
+          },
+          "CopyFailed": {
+            "Type": "Pass",
+            "Comment": "One copy failing must not hide what the others did; FinishRace counts from the ledger.",
+            "Parameters": { "status": "FAILED" },
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.copies",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "Next": "FinishRace"
+    },
+    "FinishRace": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Counts payments for the one entitlement from the ledger: exactly one is the only correct result.",
+      "Parameters": {
+        "FunctionName": "${FinishRaceFunctionArn}",
+        "Payload": { "run_id.$": "$.run_id" }
+      },
+      "ResultSelector": { "result.$": "$.Payload" },
+      "ResultPath": "$.finish",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "Next": "Done"
+    },
+    "Done": { "Type": "Succeed" },
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${MarkFailedFunctionArn}",
+        "Payload": { "run_id.$": "$.run_id", "error.$": "$.error" }
+      },
+      "ResultPath": null,
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": null, "Next": "RaceFailed" }],
+      "Next": "RaceFailed"
+    },
+    "RaceFailed": { "Type": "Fail", "Error": "RaceFailed", "Cause": "See failure_reason on the race record." }
+  }
+}
