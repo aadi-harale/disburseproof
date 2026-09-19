@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { Badge } from "../../components/ui/Badge";
@@ -9,72 +9,42 @@ import { Hash } from "../../components/ui/Hash";
 import { Icon } from "../../components/ui/Icon";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { useToast } from "../../components/ui/toast-context";
-import { ProcessorBadge, RunOutcomeBadge } from "../../components/ui/VerdictBadge";
-import { useExperiment, useRun, useStudents } from "../../lib/api/queries";
-import type { Run } from "../../lib/api/types";
-import { formatDateTime, formatDuration, processorLabel } from "../../lib/format";
-import { useDocumentTitle, useOnChange } from "../../lib/hooks";
+import { RunOutcomeBadge } from "../../components/ui/VerdictBadge";
+import { useRun, useStudents } from "../../lib/api/queries";
+import type { StudentTile } from "../../lib/api/types";
+import { formatDateTime, formatDuration, shortRunId } from "../../lib/format";
+import { useDocumentTitle } from "../../lib/hooks";
+import { PROCESSOR, processorName, TERMS } from "../../lib/labels";
 import { EvidenceDrawer } from "../evidence/EvidenceDrawer";
 import { StudentDrawer } from "../students/StudentDrawer";
-import { InvariantList } from "./InvariantList";
-import { PhaseIndicator } from "./PhaseIndicator";
-import { RunCounters } from "./RunCounters";
-import { runStory } from "./runFacts";
-import { Scoreboard } from "./Scoreboard";
-import { StateLegend } from "./StateLegend";
-import { StudentGrid } from "./StudentGrid";
-import { VerdictBanner } from "./VerdictBanner";
+import { RunStage } from "../theater/RunStage";
+import { downloadAffectedCsv } from "./affectedCsv";
 
+/** One run, any run: shareable at /runs/:id and loads cold from the API alone. */
 export function RunPage() {
   const { runId = "", beneficiaryId } = useParams();
   const navigate = useNavigate();
-  const toast = useToast();
   const runQuery = useRun(runId);
   const run = runQuery.data;
   const live = run ? !run.is_terminal : true;
   const students = useStudents(runId, live);
-  const experiment = useExperiment(run?.experiment_id);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
 
-  useDocumentTitle(run ? `${processorLabel(run.processor)} run ${run.run_id.slice(-6)}` : "Run");
+  useDocumentTitle(run ? `${processorName(run.processor)} run ${run.run_id.slice(-6)}` : "Run");
 
-  const retried = useMemo(
-    () =>
-      new Set(
-        (experiment.data?.logical_events ?? [])
-          .filter((event) => event.phase === "A")
-          .map((e) => e.beneficiary_id),
-      ),
-    [experiment.data],
+  const openStudent = useCallback(
+    (id: string) => navigate(`/runs/${runId}/students/${encodeURIComponent(id)}`),
+    [navigate, runId],
   );
-
-  // When the run finishes while we watch: refresh the grid once more and announce it.
-  const onTerminal = useCallback(
-    (was: boolean | undefined, now: boolean | undefined) => {
-      if (was === false && now === true && run) {
-        void students.refetch();
-        const story = runStory(run);
-        toast({
-          title:
-            run.status === "FAILED"
-              ? "Run failed"
-              : `${processorLabel(run.processor)} run finished: ${run.verdict ?? "evaluated"}`,
-          body: run.status === "FAILED" ? (run.failure_message ?? undefined) : (story ?? undefined),
-          tone: run.status === "FAILED" || run.verdict === "FAIL" ? "danger" : "success",
-        });
-      }
-    },
-    [run, students, toast],
-  );
-  useOnChange(run?.is_terminal, onTerminal);
-
-  const openStudent = (id: string) => navigate(`/runs/${runId}/students/${encodeURIComponent(id)}`);
   const closeStudent = useCallback(() => navigate(`/runs/${runId}`), [navigate, runId]);
   const closeEvidence = useCallback(() => setEvidenceOpen(false), []);
 
   if (runQuery.error) return <ErrorState error={runQuery.error} onRetry={() => runQuery.refetch()} />;
   if (!run) return <RunPageSkeleton />;
+
+  const affected = (students.data?.items ?? []).filter(
+    (tile) => tile.state === "paid_twice" || tile.state === "unpaid",
+  );
 
   return (
     <>
@@ -82,24 +52,24 @@ export function RunPage() {
         eyebrow={
           <span className="flex items-center gap-2">
             <Link to="/runs" className="hover:text-ink">
-              Runs
+              My runs
             </Link>
             <span aria-hidden>/</span>
-            <span className="figures">{run.run_id}</span>
+            <span className="figures">{shortRunId(run.run_id)}</span>
           </span>
         }
         title={
           <span className="flex flex-wrap items-center gap-3">
-            {processorLabel(run.processor)} processor run <RunOutcomeBadge run={run} />
+            {PROCESSOR[run.processor].primary} processor run <RunOutcomeBadge run={run} />
           </span>
         }
-        description={`${run.batch_name} · ${run.logical_events} entitlements · ${run.duplicate_count} payment events delivered twice`}
+        description={`${run.batch_name} · ${run.logical_events} students · ${run.duplicate_count} of ${run.logical_events} payment instructions sent twice (${run.expected_deliveries} arrivals)`}
         actions={
           <>
+            <CopyLinkButton />
             <Button onClick={() => setEvidenceOpen(true)}>
               <Icon name="layers" /> AWS evidence
             </Button>
-            <ButtonLink to={`/compare?a=${run.run_id}`}>Compare</ButtonLink>
             {run.status === "COMPLETED" ? (
               <ButtonLink to={`/runs/${run.run_id}/receipt`} variant="primary">
                 <Icon name="shield" /> Integrity receipt
@@ -112,84 +82,103 @@ export function RunPage() {
           </>
         }
       />
+      {live && (
+        <p className="mb-4 rounded-xl border border-line bg-surface px-4 py-2.5 text-[14px] text-muted">
+          This run keeps going on AWS if you leave the page. Come back any time from{" "}
+          <Link to="/runs" className="text-accent-text hover:underline">
+            My runs
+          </Link>{" "}
+          or this link.
+        </p>
+      )}
 
-      {run.status === "FAILED" && <FailureBanner run={run} />}
-      <VerdictBanner run={run} />
+      <RunStage
+        runId={runId}
+        initial="final"
+        onSelect={openStudent}
+        toastOnFinish
+        after={
+          <div className="flex flex-wrap gap-2 pt-1">
+            <ButtonLink to={`/compare?${run.processor === "protected" ? "b" : "a"}=${run.run_id}`}>
+              Compare with the other processor <Icon name="arrowRight" size={14} />
+            </ButtonLink>
+            <Button onClick={() => downloadAffectedCsv(run, affected)} disabled={affected.length === 0}>
+              <Icon name="download" /> Download affected students (CSV)
+            </Button>
+            {affected.length === 0 && (
+              <span className="self-center text-[13px] text-muted">
+                No student was paid twice or left unpaid.
+              </span>
+            )}
+          </div>
+        }
+      />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
+      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader
-            title="Students"
-            subtitle={
-              live
-                ? "Updates every 2 seconds while the run is in progress"
-                : "Final state, computed from the ledger"
-            }
-            actions={<StudentSearch onFind={openStudent} />}
+            title="Find a student"
+            subtitle="Every payment instruction for one student, in the order the processor handled them"
           />
-          <CardBody className="space-y-4">
-            <Scoreboard counts={students.data?.counts} total={run.logical_events} />
-            <StudentGrid
-              items={students.data?.items}
-              expected={run.logical_events}
-              retried={retried}
-              onSelect={openStudent}
-              selected={beneficiaryId}
-              label={`Students in run ${run.run_id}`}
-            />
-            <StateLegend counts={students.data?.counts} showRetried={retried.size > 0} />
-            {students.error && <ErrorState error={students.error} compact />}
+          <CardBody>
+            <StudentSearch onFind={openStudent} tiles={students.data?.items} />
           </CardBody>
         </Card>
-
-        <div className="space-y-5">
-          <Card>
-            <CardHeader title="Progress" subtitle={<ProcessorBadge processor={run.processor} />} />
-            <CardBody className="space-y-6">
-              <PhaseIndicator run={run} />
-              <RunCounters run={run} />
-            </CardBody>
-          </Card>
-          <Card>
-            <CardHeader title="Invariants" subtitle="Decided in the backend from DynamoDB rows" />
-            <CardBody>
-              <InvariantList run={run} />
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-
-      <Card className="mt-5">
-        <CardHeader title="Run details" />
-        <CardBody>
-          <dl className="grid gap-x-6 gap-y-3 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
-            <Detail label="Run ID">
-              <Hash value={run.run_id} length={40} label="run ID" />
-            </Detail>
-            <Detail label="Replay fingerprint">
-              <Hash value={run.fingerprint} length={24} label="fingerprint" />
-            </Detail>
-            <Detail label="Experiment">
-              <span className="figures">{run.experiment_id}</span>
-            </Detail>
-            <Detail label="Started">{formatDateTime(run.started_at ?? run.created_at)}</Detail>
-            <Detail label="Finished">{formatDateTime(run.finished_at)}</Detail>
-            <Detail label="Duration">{formatDuration(run.duration_ms)}</Detail>
-            <Detail label="Step Functions execution" wide>
-              <Hash value={run.sfn_execution_arn} length={48} label="execution ARN" />
-            </Detail>
-            {run.receipt_sha256 && (
-              <Detail label="Receipt SHA-256" wide>
-                <Hash value={run.receipt_sha256} length={32} label="receipt SHA-256" />
+        <Card>
+          <CardHeader title="Run details" />
+          <CardBody>
+            <dl className="grid gap-x-6 gap-y-3 text-[13px] sm:grid-cols-2">
+              <Detail label="Run ID" wide>
+                <Hash value={run.run_id} length={40} label="run ID" />
               </Detail>
-            )}
-          </dl>
-        </CardBody>
-      </Card>
+              <Detail label={`${TERMS.fingerprint.primary} (${TERMS.fingerprint.technical})`} wide>
+                <Hash value={run.fingerprint} length={32} label="fingerprint" />
+              </Detail>
+              <Detail label="Test (experiment)">
+                <span className="figures">{run.experiment_id}</span>
+              </Detail>
+              <Detail label="Duration">{formatDuration(run.duration_ms)}</Detail>
+              <Detail label="Started">{formatDateTime(run.started_at ?? run.created_at)}</Detail>
+              <Detail label="Finished">{formatDateTime(run.finished_at)}</Detail>
+              <Detail label="Step Functions execution" wide>
+                <Hash value={run.sfn_execution_arn} length={48} label="execution ARN" />
+              </Detail>
+              {run.receipt_sha256 && (
+                <Detail label="Receipt SHA-256" wide>
+                  <Hash value={run.receipt_sha256} length={32} label="receipt SHA-256" />
+                </Detail>
+              )}
+            </dl>
+          </CardBody>
+        </Card>
+      </div>
 
       <StudentDrawer runId={runId} beneficiaryId={beneficiaryId} live={live} onClose={closeStudent} />
       <EvidenceDrawer runId={runId} open={evidenceOpen} onClose={closeEvidence} />
     </>
+  );
+}
+
+export function CopyLinkButton() {
+  const [copied, setCopied] = useState<"yes" | "no" | null>(null);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href.replace(/\/students\/[^/]+$/, ""));
+      setCopied("yes");
+    } catch {
+      setCopied("no");
+    }
+    window.setTimeout(() => setCopied(null), 2000);
+  };
+  return (
+    <Button onClick={copy} aria-live="polite">
+      <Icon name={copied === "yes" ? "check" : "copy"} />
+      {copied === "yes"
+        ? "Link copied"
+        : copied === "no"
+          ? "Copy blocked — use the address bar"
+          : "Copy link"}
+    </Button>
   );
 }
 
@@ -202,49 +191,58 @@ function Detail({ label, children, wide }: { label: string; children: ReactNode;
   );
 }
 
-function FailureBanner({ run }: { run: Run }) {
-  return (
-    <div role="alert" className="mb-5 flex gap-3 rounded-xl border border-unpaid/30 bg-unpaid-soft px-4 py-3">
-      <Icon name="alert" size={18} className="mt-0.5 shrink-0 text-unpaid-text" />
-      <div className="min-w-0 text-[13px]">
-        <p className="font-semibold text-unpaid-text">
-          The run failed{run.failure_reason ? ` (${run.failure_reason})` : ""}. No verdict was issued.
-        </p>
-        {run.failure_message && <p className="mt-1 text-ink">{run.failure_message}</p>}
-        {typeof run.dlq_depth_at_failure === "number" && (
-          <p className="mt-1 text-muted">Messages in the dead-letter queue: {run.dlq_depth_at_failure}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StudentSearch({ onFind }: { onFind: (beneficiaryId: string) => void }) {
+function StudentSearch({
+  onFind,
+  tiles,
+}: {
+  onFind: (id: string) => void;
+  tiles: StudentTile[] | undefined;
+}) {
   const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const id = value.trim().toUpperCase();
-    if (id) onFind(/^\d+$/.test(id) ? `STU-${id.padStart(3, "0")}` : id);
+    const raw = value.trim().toUpperCase();
+    if (!raw) {
+      setError("Type a student ID, e.g. STU-042 or just 42.");
+      return;
+    }
+    const id = /^\d+$/.test(raw) ? `STU-${raw.padStart(3, "0")}` : raw;
+    if (tiles && !tiles.some((tile) => tile.beneficiary_id === id)) {
+      setError(`${id} is not in this run's batch.`);
+      return;
+    }
+    setError(null);
+    onFind(id);
   };
   return (
-    <form onSubmit={submit} className="flex items-center" role="search">
-      <label htmlFor="student-search" className="sr-only">
-        Find a student by ID
+    <form onSubmit={submit} role="search" className="space-y-2">
+      <label htmlFor="student-search" className="block text-[13px] font-medium">
+        Student ID
       </label>
-      <div className="relative">
-        <Icon
-          name="search"
-          size={14}
-          className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-faint"
-        />
+      <div className="flex gap-2">
         <input
           id="student-search"
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setError(null);
+          }}
           placeholder="STU-042"
-          className="figures h-8 w-32 rounded-lg border border-line-strong bg-surface pr-2 pl-8 text-[13px] placeholder:text-faint"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? "student-search-error" : undefined}
+          className="figures h-10 w-44 rounded-lg border border-line-strong bg-surface px-3 text-[14px] placeholder:text-faint"
         />
+        <Button type="submit">
+          <Icon name="search" /> Open
+        </Button>
       </div>
+      {error && (
+        <p id="student-search-error" className="text-[13px] text-unpaid-text">
+          {error}
+        </p>
+      )}
+      <p className="text-[12.5px] text-muted">Or click any tile above (arrow keys + Enter work too).</p>
     </form>
   );
 }
@@ -253,12 +251,10 @@ function RunPageSkeleton() {
   return (
     <div aria-busy className="space-y-5">
       <Skeleton className="h-14 w-2/3" />
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <Skeleton className="h-[480px]" />
-        <div className="space-y-5">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-40" />
-        </div>
+      <Skeleton className="h-12" />
+      <div className="grid gap-5 lg:grid-cols-[460px_minmax(0,1fr)]">
+        <Skeleton className="h-[460px]" />
+        <Skeleton className="h-[460px]" />
       </div>
       <Badge tone="muted">Loading run…</Badge>
     </div>

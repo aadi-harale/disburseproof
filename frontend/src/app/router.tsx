@@ -3,11 +3,11 @@ import { createBrowserRouter } from "react-router";
 import { BatchDetailPage } from "../features/batches/BatchDetailPage";
 import { BatchesPage } from "../features/batches/BatchesPage";
 import { ComparePage } from "../features/compare/ComparePage";
-import { OverviewPage } from "../features/overview/OverviewPage";
 import { RaceLabPage } from "../features/race/RaceLabPage";
 import { ReceiptPage } from "../features/receipts/ReceiptPage";
 import { RunPage } from "../features/runs/RunPage";
 import { RunsHistoryPage } from "../features/runs/RunsHistoryPage";
+import { HomePage } from "../features/story/HomePage";
 import { AppLayout } from "./AppLayout";
 import { RouteError } from "./RouteError";
 
@@ -17,7 +17,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     errorElement: <RouteError />,
     children: [
-      { path: "/", element: <OverviewPage /> },
+      { path: "/", element: <HomePage /> },
       { path: "/runs", element: <RunsHistoryPage /> },
       { path: "/runs/:runId", element: <RunPage /> },
       { path: "/runs/:runId/students/:beneficiaryId", element: <RunPage /> },

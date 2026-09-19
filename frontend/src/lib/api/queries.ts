@@ -23,6 +23,7 @@ export const keys = {
   runs: ["runs"] as const,
   run: (runId: string) => ["run", runId] as const,
   students: (runId: string) => ["students", runId] as const,
+  deliveries: (runId: string) => ["deliveries", runId] as const,
   student: (runId: string, beneficiaryId: string) => ["student", runId, beneficiaryId] as const,
   receipt: (runId: string) => ["receipt", runId] as const,
   evidence: (runId: string) => ["evidence", runId] as const,
@@ -66,6 +67,17 @@ export function useStudents(runId: string | undefined, live: boolean) {
     queryFn: () => api.students(runId!),
     enabled: Boolean(runId),
     refetchInterval: live ? 2000 : false,
+  });
+}
+
+/** Every delivery of a run, oldest first. Polls every 1.5 s while the run is live. */
+export function useDeliveries(runId: string | undefined, live: boolean) {
+  return useQuery({
+    queryKey: keys.deliveries(runId ?? ""),
+    queryFn: () => api.deliveries(runId!),
+    enabled: Boolean(runId),
+    refetchInterval: live ? 1500 : false,
+    staleTime: live ? 1000 : Infinity,
   });
 }
 

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Icon } from "../../components/ui/Icon";
 import type { StudentState } from "../../lib/api/types";
 
-/** The only place student states get a colour, glyph and name. */
+/** The only place student states get a colour, glyph and name: colour + glyph + label, never colour alone. */
 export const STUDENT_STATES: Record<
   StudentState,
   { name: string; tile: string; soft: string; glyph: ReactNode }
@@ -21,16 +21,16 @@ export const STUDENT_STATES: Record<
     glyph: "×2",
   },
   unpaid: {
-    name: "Paid ₹0",
+    name: "Unpaid",
     tile: "bg-unpaid text-white",
     soft: "bg-unpaid-soft text-unpaid-text",
     glyph: "₹0",
   },
   pending: {
-    name: "Pending",
+    name: "Waiting",
     tile: "bg-pending text-pending-text",
     soft: "bg-surface-2 text-muted",
-    glyph: null,
+    glyph: "·",
   },
 };
 

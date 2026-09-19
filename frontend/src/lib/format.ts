@@ -72,3 +72,8 @@ export function processorLabel(processor: string): string {
 export function plural(value: number, one: string, many = `${one}s`): string {
   return `${formatCount(value)} ${value === 1 ? one : many}`;
 }
+
+/** "run_01M2…P0WV3N" -> "run_…P0WV3N": enough to tell runs apart on screen. */
+export function shortRunId(runId: string): string {
+  return `run_…${runId.slice(-6)}`;
+}

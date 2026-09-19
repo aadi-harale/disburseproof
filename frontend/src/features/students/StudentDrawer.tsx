@@ -9,15 +9,16 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useStudent } from "../../lib/api/queries";
 import type { DeliveryOutcome, DeliveryRecord } from "../../lib/api/types";
 import { formatINR, formatTimeMs } from "../../lib/format";
+import { OUTCOME } from "../../lib/labels";
 import { STUDENT_STATES } from "../runs/studentStates";
 
-const OUTCOMES: Record<DeliveryOutcome, { label: string; tone: Tone }> = {
-  COMMITTED: { label: "Paid", tone: "success" },
-  DUPLICATE_SUPPRESSED: { label: "Duplicate suppressed", tone: "accent" },
-  BUDGET_EXHAUSTED: { label: "Rejected: budget exhausted", tone: "danger" },
+const TONES: Record<DeliveryOutcome, Tone> = {
+  COMMITTED: "success",
+  DUPLICATE_SUPPRESSED: "accent",
+  BUDGET_EXHAUSTED: "danger",
 };
 
-/** Every delivery for one student, in the order the processor handled them. */
+/** Every payment instruction (delivery) for one student, in the order the processor handled them. */
 export function StudentDrawer({
   runId,
   beneficiaryId,
@@ -60,7 +61,7 @@ export function StudentDrawer({
                   <span className="text-[13px] font-semibold">{STUDENT_STATES[entitlement.state].name}</span>
                   <span className="figures text-[12px]">
                     {entitlement.payments} payment{entitlement.payments === 1 ? "" : "s"} ·{" "}
-                    {entitlement.deliveries} deliver{entitlement.deliveries === 1 ? "y" : "ies"}
+                    {entitlement.deliveries} instruction{entitlement.deliveries === 1 ? "" : "s"}
                   </span>
                 </div>
                 <div
@@ -90,8 +91,8 @@ export function StudentDrawer({
               {data.double_paid_students.length > 0 && (
                 <>
                   <p className="mt-2 text-[13px] text-muted">
-                    By then the fixed budget had already paid {data.double_paid_students.length} students
-                    twice:
+                    By then the fixed budget had already paid {data.double_paid_students.length} other
+                    students twice:
                   </p>
                   <ul className="mt-2 flex flex-wrap gap-1.5">
                     {data.double_paid_students.map((student) => (
@@ -112,9 +113,13 @@ export function StudentDrawer({
           )}
 
           <section>
-            <h3 className="mb-3 text-[13px] font-semibold">Delivery timeline</h3>
+            <h3 className="mb-3 text-[13px] font-semibold">
+              Payment instructions <span className="font-normal text-faint">deliveries</span>
+            </h3>
             {data.deliveries.length === 0 ? (
-              <p className="text-[13px] text-muted">No deliveries recorded for this student yet.</p>
+              <p className="text-[13px] text-muted">
+                No payment instruction has arrived for this student yet.
+              </p>
             ) : (
               <ol className="relative space-y-3 border-l border-line pl-4">
                 {data.deliveries.map((delivery) => (
@@ -130,11 +135,11 @@ export function StudentDrawer({
 }
 
 function DeliveryItem({ delivery }: { delivery: DeliveryRecord }) {
-  const outcome = OUTCOMES[delivery.outcome];
+  const outcome = OUTCOME[delivery.outcome];
   const phase =
     delivery.phase === "A"
-      ? `Phase A · retry wave · copy ${delivery.copy_index} of 2`
-      : "Phase B · delivered once";
+      ? `Sent twice: ${delivery.copy_index === 1 ? "1st" : "2nd"} copy (retry wave, phase A)`
+      : "Sent once (phase B)";
   return (
     <li className="relative">
       <span
@@ -149,16 +154,17 @@ function DeliveryItem({ delivery }: { delivery: DeliveryRecord }) {
         aria-hidden
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={outcome.tone}>{outcome.label}</Badge>
+        <Badge tone={TONES[delivery.outcome]}>{outcome.primary}</Badge>
+        <span className="figures text-[11px] text-faint">{outcome.technical}</span>
         <span className="figures text-[12px] text-muted">{formatTimeMs(delivery.processed_at)}</span>
       </div>
       <div className="mt-1 text-[12px] text-muted">{phase}</div>
       <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12px]">
-        <dt className="text-faint">Delivery</dt>
+        <dt className="text-faint">Instruction ID</dt>
         <dd className="min-w-0">
           <Hash value={delivery.delivery_id} length={18} label="delivery ID" />
         </dd>
-        <dt className="text-faint">Logical event</dt>
+        <dt className="text-faint">Entitlement event</dt>
         <dd className="figures">{delivery.logical_event_id}</dd>
         <dt className="text-faint">Lambda request</dt>
         <dd className="min-w-0">
@@ -168,7 +174,7 @@ function DeliveryItem({ delivery }: { delivery: DeliveryRecord }) {
         <dd className="figures">{delivery.attempt}</dd>
         {delivery.effect_id && (
           <>
-            <dt className="text-faint">Ledger effect</dt>
+            <dt className="text-faint">Payment ID</dt>
             <dd className="min-w-0">
               <Hash value={delivery.effect_id} length={18} label="effect ID" />
             </dd>

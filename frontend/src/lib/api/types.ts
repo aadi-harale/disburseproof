@@ -203,6 +203,29 @@ export interface DeliveryRecord {
   budget_remaining_paise_at_rejection: number | null;
 }
 
+/** One row of GET /runs/{id}/deliveries, oldest first: the replay feed. */
+export interface ReplayDelivery {
+  delivery_id: string;
+  logical_event_id: string;
+  entitlement_key: string;
+  beneficiary_id: string;
+  installment: number;
+  amount_paise: number | null;
+  phase: "A" | "B";
+  copy_index: number;
+  duplicate_of: string | null;
+  outcome: DeliveryOutcome;
+  processed_at: string;
+  effect_id: string | null;
+  budget_remaining_paise_at_rejection?: number | null;
+}
+
+export interface DeliveriesResponse {
+  run_id: string;
+  status: RunStatus;
+  items: ReplayDelivery[];
+}
+
 export interface StudentDetail {
   run: Run;
   student: { beneficiary_id: string; display_name: string };

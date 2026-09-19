@@ -5,6 +5,7 @@
  */
 import type {
   BatchDetail,
+  DeliveriesResponse,
   Batch,
   CsvPreview,
   Evidence,
@@ -124,6 +125,7 @@ export const api = {
   students: (runId: string) => request<StudentsResponse>(`/runs/${encode(runId)}/students`),
   student: (runId: string, beneficiaryId: string) =>
     request<StudentDetail>(`/runs/${encode(runId)}/students/${encode(beneficiaryId)}`),
+  deliveries: (runId: string) => request<DeliveriesResponse>(`/runs/${encode(runId)}/deliveries`),
   receipt: (runId: string) => request<ReceiptResponse>(`/runs/${encode(runId)}/receipt`),
   evidence: (runId: string) => request<Evidence>(`/runs/${encode(runId)}/evidence`),
 
