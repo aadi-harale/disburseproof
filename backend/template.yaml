@@ -522,6 +522,7 @@ Resources:
         GetStudent:
           Type: HttpApi
           Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/students/{beneficiary_id}" }
+        ListDeliveries: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/deliveries" } }
         GetOverview: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /overview } }
 
   RacesApiFunction:

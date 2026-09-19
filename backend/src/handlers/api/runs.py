@@ -1,4 +1,4 @@
-"""HTTP handler: /runs, /runs/{id}/students, /overview.
+"""HTTP handler: /runs, /runs/{id}/students, /runs/{id}/deliveries, /overview.
 
 Parses the request, calls RunService, shapes the response.
 Must never: contain business logic (services/run_service.py owns it).
@@ -59,6 +59,10 @@ def get_student(request: ApiRequest) -> tuple[int, object]:
     )
 
 
+def list_deliveries(request: ApiRequest) -> tuple[int, object]:
+    return 200, _service().deliveries(request.path("run_id", RUN_ID_PATTERN))
+
+
 def get_overview(_: ApiRequest) -> tuple[int, object]:
     return 200, _service().overview()
 
@@ -69,6 +73,7 @@ ROUTES = {
     "GET /runs/{run_id}": get_run,
     "GET /runs/{run_id}/students": list_students,
     "GET /runs/{run_id}/students/{beneficiary_id}": get_student,
+    "GET /runs/{run_id}/deliveries": list_deliveries,
     "GET /overview": get_overview,
 }
 

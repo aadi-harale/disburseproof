@@ -224,6 +224,41 @@ class RunService:
             "double_paid_students": double_paid if starved else [],
         }
 
+    def deliveries(self, run_id: str) -> dict[str, Any]:
+        """GET /runs/{id}/deliveries: every recorded delivery, oldest first, for replay.
+
+        Read-only. Each row carries its entitlement's amount so a client can replay
+        the budget without guessing; nothing here is derived beyond that join.
+        """
+        run = self._runs.require(run_id)
+        meta, entitlements = self._batch(run["batch_id"])
+        keyed = key_entitlements(meta.scheme_id, meta.academic_year, entitlements)
+        rows = self._deliveries.list_deliveries(run_id)
+        return {
+            "run_id": run_id,
+            "status": run["status"],
+            "items": [
+                {
+                    "delivery_id": d.delivery_id,
+                    "logical_event_id": d.logical_event_id,
+                    "entitlement_key": d.entitlement_key,
+                    "beneficiary_id": d.beneficiary_id,
+                    "installment": d.installment,
+                    "amount_paise": keyed[d.entitlement_key].amount_paise
+                    if d.entitlement_key in keyed
+                    else None,
+                    "phase": d.phase.value,
+                    "copy_index": d.copy_index,
+                    "duplicate_of": d.duplicate_of,
+                    "outcome": d.outcome.value,
+                    "processed_at": d.processed_at,
+                    "effect_id": d.effect_id,
+                    "budget_remaining_paise_at_rejection": d.budget_remaining_paise_at_rejection,
+                }
+                for d in rows
+            ],
+        }
+
     def overview(self) -> dict[str, Any]:
         """GET /overview: the demo batch and experiment, plus the latest run of each processor."""
         meta = self._batches.get_meta(DEMO_BATCH_ID)
