@@ -34,8 +34,10 @@ class Expression:
         return placeholder
 
     def set_clause(self, updates: Mapping[str, object]) -> str:
-        parts = [f"{self.name(attribute)} = {self.value('set_' + attribute, value)}"
-                 for attribute, value in updates.items()]
+        parts = [
+            f"{self.name(attribute)} = {self.value('set_' + attribute, value)}"
+            for attribute, value in updates.items()
+        ]
         return "SET " + ", ".join(parts)
 
     def request_args(self) -> dict[str, Any]:

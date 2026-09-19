@@ -61,7 +61,9 @@ class VulnerableProcessor:
         # INTENTIONALLY UNSAFE: nothing asks "has this *entitlement* already been paid?".
         # A second delivery of the same logical event has a new delivery_id, so it
         # debits the budget again.
-        debit = retrier.run(lambda _attempt: self._store.debit_budget(event.run_id, event.amount_paise))
+        debit = retrier.run(
+            lambda _attempt: self._store.debit_budget(event.run_id, event.amount_paise)
+        )
 
         effect_id: str | None = None
         if debit.accepted:
@@ -71,7 +73,9 @@ class VulnerableProcessor:
             # INTENTIONALLY UNSAFE: the effect is written in a separate request from the
             # budget debit. A crash between them loses money from the budget without
             # recording a payment, and a redelivery afterwards debits it again.
-            self._store.put_effect(LedgerEffect.for_event(event, effect_id=effect_id, committed_at=now))
+            self._store.put_effect(
+                LedgerEffect.for_event(event, effect_id=effect_id, committed_at=now)
+            )
             outcome = DeliveryOutcome.COMMITTED
         else:
             outcome = DeliveryOutcome.BUDGET_EXHAUSTED
@@ -97,5 +101,7 @@ class VulnerableProcessor:
         except DeliveryAlreadyRecorded:
             # INTENTIONALLY UNSAFE: a concurrent copy of this delivery got here first,
             # but our budget debit and payment above have already happened.
-            return ProcessingOutcome(ProcessingStatus.ALREADY_PROCESSED, retrier.attempts, effect_id)
+            return ProcessingOutcome(
+                ProcessingStatus.ALREADY_PROCESSED, retrier.attempts, effect_id
+            )
         return ProcessingOutcome(ProcessingStatus(outcome.value), retrier.attempts, effect_id)

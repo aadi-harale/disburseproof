@@ -39,7 +39,10 @@ def test_batch_hash_ignores_input_order(entitlements: list[Entitlement]) -> None
 
 
 def test_batch_hash_changes_when_any_amount_changes(entitlements: list[Entitlement]) -> None:
-    changed = [*entitlements[:-1], Entitlement("STU-100", entitlements[-1].display_name, 999_999, 1)]
+    changed = [
+        *entitlements[:-1],
+        Entitlement("STU-100", entitlements[-1].display_name, 999_999, 1),
+    ]
     assert batch_content_sha256(changed) != batch_content_sha256(entitlements)
 
 

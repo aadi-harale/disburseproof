@@ -86,7 +86,11 @@ def json_response(status: int, payload: object) -> dict[str, Any]:
 
 
 def error_response(
-    status: int, code: str, message: str, request_id: str, details: list[dict[str, object]] | None = None
+    status: int,
+    code: str,
+    message: str,
+    request_id: str,
+    details: list[dict[str, object]] | None = None,
 ) -> dict[str, Any]:
     error: dict[str, object] = {"code": code, "message": message, "request_id": request_id}
     if details:
@@ -97,7 +101,9 @@ def error_response(
 Route = Callable[[ApiRequest], tuple[int, object]]
 
 
-def dispatch(routes: Mapping[str, Route], event: Mapping[str, Any], logger: Logger) -> dict[str, Any]:
+def dispatch(
+    routes: Mapping[str, Route], event: Mapping[str, Any], logger: Logger
+) -> dict[str, Any]:
     """Run the route matching `event.routeKey` and map typed errors to HTTP statuses.
 
     Unknown errors become a 500 with the API Gateway request ID so the operator can
@@ -123,6 +129,8 @@ def dispatch(routes: Mapping[str, Route], event: Mapping[str, Any], logger: Logg
     except Exception:
         logger.exception("unhandled error")
         return error_response(
-            500, "INTERNAL", "Unexpected server error. Quote the request ID when reporting it.",
+            500,
+            "INTERNAL",
+            "Unexpected server error. Quote the request ID when reporting it.",
             request.request_id,
         )

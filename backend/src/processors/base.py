@@ -45,7 +45,9 @@ class ProcessingContext:
 class DisbursementProcessor(Protocol):
     name: ProcessorName
 
-    def process(self, event: DisbursementEvent, context: ProcessingContext) -> ProcessingOutcome: ...
+    def process(
+        self, event: DisbursementEvent, context: ProcessingContext
+    ) -> ProcessingOutcome: ...
 
 
 # --- Storage outcomes, raised by adapters -------------------------------------

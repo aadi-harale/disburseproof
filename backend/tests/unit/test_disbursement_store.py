@@ -32,8 +32,12 @@ CONFLICT = {"Code": "TransactionConflict"}
 
 def _reasons(**codes: dict[str, Any]) -> list[dict[str, Any]]:
     reasons = [NONE, NONE, NONE, NONE]
-    positions = {"idem": COMMIT_IDEMPOTENCY, "run": COMMIT_RUN_BUDGET, "ledger": COMMIT_LEDGER,
-                 "delivery": COMMIT_DELIVERY}
+    positions = {
+        "idem": COMMIT_IDEMPOTENCY,
+        "run": COMMIT_RUN_BUDGET,
+        "ledger": COMMIT_LEDGER,
+        "delivery": COMMIT_DELIVERY,
+    }
     for name, reason in codes.items():
         reasons[positions[name]] = reason
     return reasons
@@ -45,7 +49,10 @@ def test_transaction_items_are_in_the_documented_order() -> None:
 
 def test_recorded_delivery_wins_over_everything() -> None:
     # A redelivery also fails the idempotency condition; it must not look like a new duplicate.
-    assert isinstance(classify_commit_cancellation(_reasons(idem=FAILED, delivery=FAILED)), DeliveryAlreadyRecorded)
+    assert isinstance(
+        classify_commit_cancellation(_reasons(idem=FAILED, delivery=FAILED)),
+        DeliveryAlreadyRecorded,
+    )
 
 
 def test_claimed_key_is_a_business_duplicate_even_if_budget_also_fails() -> None:
@@ -54,7 +61,10 @@ def test_claimed_key_is_a_business_duplicate_even_if_budget_also_fails() -> None
 
 
 def test_budget_failure_reports_the_remaining_budget() -> None:
-    run = {"Code": "ConditionalCheckFailed", "Item": {"run_id": {"S": "r"}, "budget_remaining_paise": {"N": "0"}}}
+    run = {
+        "Code": "ConditionalCheckFailed",
+        "Item": {"run_id": {"S": "r"}, "budget_remaining_paise": {"N": "0"}},
+    }
     result = classify_commit_cancellation(_reasons(run=run))
     assert isinstance(result, InsufficientBudget)
     assert result.budget_remaining_paise == 0
@@ -69,8 +79,10 @@ def test_conflict_is_retryable() -> None:
 
 
 def test_unknown_cancellation_is_not_swallowed() -> None:
-    assert isinstance(classify_commit_cancellation(_reasons(ledger={"Code": "ValidationError"})),
-                      UnexpectedCancellation)
+    assert isinstance(
+        classify_commit_cancellation(_reasons(ledger={"Code": "ValidationError"})),
+        UnexpectedCancellation,
+    )
 
 
 def test_record_cancellation_mapping() -> None:
@@ -92,29 +104,60 @@ class _StubClient:
 
 def _cancelled(reasons: list[dict[str, Any]]) -> ClientError:
     return ClientError(
-        {"Error": {"Code": "TransactionCanceledException", "Message": "cancelled"}, "CancellationReasons": reasons},
+        {
+            "Error": {"Code": "TransactionCanceledException", "Message": "cancelled"},
+            "CancellationReasons": reasons,
+        },
         "TransactWriteItems",
     )
 
 
 def _store(client: _StubClient) -> DynamoDisbursementStore:
-    return DynamoDisbursementStore(runs_table="runs", ledger_table="ledger", idempotency_table="idem",
-                                   deliveries_table="deliveries", client=client)
+    return DynamoDisbursementStore(
+        runs_table="runs",
+        ledger_table="ledger",
+        idempotency_table="idem",
+        deliveries_table="deliveries",
+        client=client,
+    )
 
 
-EFFECT = LedgerEffect("run_X", "eff-1", "S#STU-1#2026-27#INST-1", "STU-1", 1, 100, "EVT-001", "del-1", "t")
-DELIVERY = Delivery("run_X", "del-1", "EVT-001", "S#STU-1#2026-27#INST-1", "STU-1", 1, InjectionPhase.A, 1, None,
-                    DeliveryOutcome.COMMITTED, "t", "req", 1, "eff-1")
+EFFECT = LedgerEffect(
+    "run_X", "eff-1", "S#STU-1#2026-27#INST-1", "STU-1", 1, 100, "EVT-001", "del-1", "t"
+)
+DELIVERY = Delivery(
+    "run_X",
+    "del-1",
+    "EVT-001",
+    "S#STU-1#2026-27#INST-1",
+    "STU-1",
+    1,
+    InjectionPhase.A,
+    1,
+    None,
+    DeliveryOutcome.COMMITTED,
+    "t",
+    "req",
+    1,
+    "eff-1",
+)
 
 
 def test_commit_sends_four_items_with_their_conditions() -> None:
     client = _StubClient()
-    _store(client).commit_payment(idempotency_key="run_X#S#STU-1#2026-27#INST-1", effect=EFFECT, delivery=DELIVERY)
+    _store(client).commit_payment(
+        idempotency_key="run_X#S#STU-1#2026-27#INST-1", effect=EFFECT, delivery=DELIVERY
+    )
     items = client.calls[0]["TransactItems"]
     assert [next(iter(item)) for item in items] == ["Put", "Update", "Put", "Put"]
     assert items[COMMIT_IDEMPOTENCY]["Put"]["TableName"] == "idem"
-    assert items[COMMIT_IDEMPOTENCY]["Put"]["ConditionExpression"] == "attribute_not_exists(idem_key)"
-    assert "budget_remaining_paise >= :amount" in items[COMMIT_RUN_BUDGET]["Update"]["ConditionExpression"]
+    assert (
+        items[COMMIT_IDEMPOTENCY]["Put"]["ConditionExpression"] == "attribute_not_exists(idem_key)"
+    )
+    assert (
+        "budget_remaining_paise >= :amount"
+        in items[COMMIT_RUN_BUDGET]["Update"]["ConditionExpression"]
+    )
     assert items[COMMIT_LEDGER]["Put"]["TableName"] == "ledger"
     assert items[COMMIT_DELIVERY]["Put"]["ConditionExpression"] == "attribute_not_exists(sk)"
     assert items[COMMIT_DELIVERY]["Put"]["Item"]["sk"] == {"S": "DELIVERY#del-1"}
@@ -127,7 +170,11 @@ def test_commit_translates_a_cancellation_into_a_typed_outcome() -> None:
 
 
 def test_other_client_errors_propagate_unchanged() -> None:
-    error = ClientError({"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "TransactWriteItems")
+    error = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "TransactWriteItems"
+    )
     with pytest.raises(ClientError) as raised:
-        _store(_StubClient(error)).commit_payment(idempotency_key="k", effect=EFFECT, delivery=DELIVERY)
+        _store(_StubClient(error)).commit_payment(
+            idempotency_key="k", effect=EFFECT, delivery=DELIVERY
+        )
     assert raised.value is error

@@ -113,13 +113,16 @@ class RunService:
         try:
             execution_arn = self._step_functions.start_run(run_id)
         except Exception as error:
-            self._runs.update(run_id, {
-                "status": RunStatus.FAILED.value,
-                "phase": RunPhase.FAILED.value,
-                "failure_reason": FailureReason.START_FAILED.value,
-                "failure_message": f"Could not start the workflow: {type(error).__name__}",
-                "finished_at": self._now(),
-            })
+            self._runs.update(
+                run_id,
+                {
+                    "status": RunStatus.FAILED.value,
+                    "phase": RunPhase.FAILED.value,
+                    "failure_reason": FailureReason.START_FAILED.value,
+                    "failure_message": f"Could not start the workflow: {type(error).__name__}",
+                    "finished_at": self._now(),
+                },
+            )
             raise
         run = self._runs.update(run_id, {"sfn_execution_arn": execution_arn})
         return 202, {"run": public_run(run)}
@@ -180,14 +183,23 @@ class RunService:
             if d.beneficiary_id == beneficiary_id
         ]
         payments = [
-            {"effect_id": e.effect_id, "entitlement_key": e.entitlement_key, "amount_paise": e.amount_paise,
-             "delivery_id": e.delivery_id, "committed_at": e.committed_at}
+            {
+                "effect_id": e.effect_id,
+                "entitlement_key": e.entitlement_key,
+                "amount_paise": e.amount_paise,
+                "delivery_id": e.delivery_id,
+                "committed_at": e.committed_at,
+            }
             for e in effects
             if e.beneficiary_id == beneficiary_id
         ]
         # For a starved student: who received the money instead (the double-paid students).
         double_paid = [
-            {"beneficiary_id": v.beneficiary_id, "display_name": v.display_name, "payments": v.payments}
+            {
+                "beneficiary_id": v.beneficiary_id,
+                "display_name": v.display_name,
+                "payments": v.payments,
+            }
             for v in views
             if v.state is StudentState.PAID_TWICE
         ]
@@ -198,7 +210,9 @@ class RunService:
             "entitlements": [view.to_dict() for view in mine],
             "deliveries": timeline,
             "payments": payments,
-            "rejections": [row for row in timeline if row["outcome"] == DeliveryOutcome.BUDGET_EXHAUSTED.value],
+            "rejections": [
+                row for row in timeline if row["outcome"] == DeliveryOutcome.BUDGET_EXHAUSTED.value
+            ],
             "double_paid_students": double_paid if starved else [],
         }
 
@@ -212,8 +226,15 @@ class RunService:
         latest: dict[str, Any] = {}
         for processor in EXPERIMENT_PROCESSORS:
             match = next(
-                (r for r in recent if r.get("processor") == processor.value
-                 and (demo_experiment is None or r.get("experiment_id") == demo_experiment["experiment_id"])),
+                (
+                    r
+                    for r in recent
+                    if r.get("processor") == processor.value
+                    and (
+                        demo_experiment is None
+                        or r.get("experiment_id") == demo_experiment["experiment_id"]
+                    )
+                ),
                 None,
             )
             latest[processor.value] = public_run(match) if match else None
@@ -234,7 +255,10 @@ class RunService:
     def _batch(self, batch_id: str) -> tuple[BatchMeta, list[Entitlement]]:
         cached = self._entitlement_cache.get(batch_id)
         if cached is None:
-            cached = (self._batches.require_meta(batch_id), self._batches.list_entitlements(batch_id))
+            cached = (
+                self._batches.require_meta(batch_id),
+                self._batches.list_entitlements(batch_id),
+            )
             self._entitlement_cache[batch_id] = cached
         return cached
 

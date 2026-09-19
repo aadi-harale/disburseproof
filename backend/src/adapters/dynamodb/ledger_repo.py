@@ -32,4 +32,7 @@ class LedgerRepository:
         self._client = client or dynamodb_client()
 
     def list_effects(self, run_id: str) -> list[LedgerEffect]:
-        return [effect_from_row(row) for row in query_all(self._client, **run_query(self._table, run_id))]
+        return [
+            effect_from_row(row)
+            for row in query_all(self._client, **run_query(self._table, run_id))
+        ]

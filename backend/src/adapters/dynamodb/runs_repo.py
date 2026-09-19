@@ -37,7 +37,9 @@ class RunsRepository:
         )
 
     def get(self, run_id: str) -> dict[str, Any] | None:
-        response = self._client.get_item(TableName=self._table, Key=key(run_id=run_id), ConsistentRead=True)
+        response = self._client.get_item(
+            TableName=self._table, Key=key(run_id=run_id), ConsistentRead=True
+        )
         item = response.get("Item")
         return from_item(item) if item else None
 
@@ -76,10 +78,16 @@ class RunsRepository:
         expression = Expression()
         conditions = ["attribute_exists(run_id)"]
         if require_status is not None:
-            conditions.append(f"{expression.name('status')} = {expression.value('required', require_status.value)}")
+            conditions.append(
+                f"{expression.name('status')} = {expression.value('required', require_status.value)}"
+            )
         if forbid_status is not None:
-            conditions.append(f"{expression.name('status')} <> {expression.value('forbidden', forbid_status.value)}")
-        update_expression = expression.set_clause({k: v for k, v in updates.items() if v is not None})
+            conditions.append(
+                f"{expression.name('status')} <> {expression.value('forbidden', forbid_status.value)}"
+            )
+        update_expression = expression.set_clause(
+            {k: v for k, v in updates.items() if v is not None}
+        )
         try:
             response = self._client.update_item(
                 TableName=self._table,
@@ -91,7 +99,9 @@ class RunsRepository:
             )
         except ClientError as error:
             if error_code(error) == "ConditionalCheckFailedException":
-                raise ConflictError(f"Run {run_id} is not in a state that allows this update") from error
+                raise ConflictError(
+                    f"Run {run_id} is not in a state that allows this update"
+                ) from error
             raise
         return from_item(response["Attributes"])
 

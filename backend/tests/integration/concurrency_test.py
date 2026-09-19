@@ -32,19 +32,23 @@ from botocore.config import Config
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from common.ids import new_run_id  # noqa: E402
-from domain.demo_data import DEMO_ACADEMIC_YEAR, DEMO_AMOUNT_PAISE, DEMO_SCHEME_ID  # noqa: E402
-from domain.idempotency import build_entitlement_key, idempotency_key_for  # noqa: E402
-from domain.models import DisbursementEvent, InjectionPhase  # noqa: E402
+from common.ids import new_run_id
+from domain.demo_data import DEMO_ACADEMIC_YEAR, DEMO_AMOUNT_PAISE, DEMO_SCHEME_ID
+from domain.idempotency import build_entitlement_key, idempotency_key_for
+from domain.models import DisbursementEvent, InjectionPhase
 
 
 def outputs(stack: str, region: str) -> dict[str, str]:
-    raw = boto3.client("cloudformation", region_name=region).describe_stacks(StackName=stack)["Stacks"][0]["Outputs"]
+    raw = boto3.client("cloudformation", region_name=region).describe_stacks(StackName=stack)[
+        "Stacks"
+    ][0]["Outputs"]
     return {o["OutputKey"]: o["OutputValue"] for o in raw}
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--stack", default="disburseproof-dev")
     parser.add_argument("--region", default="ap-south-1")
     parser.add_argument("--copies", type=int, default=20)
@@ -54,22 +58,34 @@ def main() -> int:
     stack = outputs(args.stack, args.region)
     dynamodb = boto3.client("dynamodb", region_name=args.region)
     lambda_client = boto3.client(
-        "lambda", region_name=args.region,
-        config=Config(max_pool_connections=args.copies, retries={"mode": "standard", "max_attempts": 8}),
+        "lambda",
+        region_name=args.region,
+        config=Config(
+            max_pool_connections=args.copies, retries={"mode": "standard", "max_attempts": 8}
+        ),
     )
 
     run_id = new_run_id()
-    budget = args.copies * DEMO_AMOUNT_PAISE  # enough for every copy: only idempotency may stop a payment
+    budget = (
+        args.copies * DEMO_AMOUNT_PAISE
+    )  # enough for every copy: only idempotency may stop a payment
     now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     # No entity_type attribute: the sparse index behind GET /runs does not list this test run.
     dynamodb.put_item(
         TableName=stack["RunsTableName"],
         Item={
-            "run_id": {"S": run_id}, "processor": {"S": args.processor}, "status": {"S": "RUNNING"},
-            "phase": {"S": "PHASE_A"}, "budget_remaining_paise": {"N": str(budget)},
-            "total_budget_paise": {"N": str(budget)}, "delivered_count": {"N": "0"},
-            "committed_count": {"N": "0"}, "suppressed_count": {"N": "0"},
-            "budget_exhausted_count": {"N": "0"}, "created_at": {"S": now}, "race_window_ms": {"N": "200"},
+            "run_id": {"S": run_id},
+            "processor": {"S": args.processor},
+            "status": {"S": "RUNNING"},
+            "phase": {"S": "PHASE_A"},
+            "budget_remaining_paise": {"N": str(budget)},
+            "total_budget_paise": {"N": str(budget)},
+            "delivered_count": {"N": "0"},
+            "committed_count": {"N": "0"},
+            "suppressed_count": {"N": "0"},
+            "budget_exhausted_count": {"N": "0"},
+            "created_at": {"S": now},
+            "race_window_ms": {"N": "200"},
             "purpose": {"S": "concurrency_test"},
         },
         ConditionExpression="attribute_not_exists(run_id)",
@@ -78,10 +94,18 @@ def main() -> int:
     entitlement_key = build_entitlement_key(DEMO_SCHEME_ID, "STU-001", DEMO_ACADEMIC_YEAR, 1)
     messages = [
         DisbursementEvent(
-            run_id=run_id, delivery_id=str(uuid.uuid4()), logical_event_id="EVT-001",
-            entitlement_key=entitlement_key, scheme_id=DEMO_SCHEME_ID, beneficiary_id="STU-001",
-            academic_year=DEMO_ACADEMIC_YEAR, installment=1, amount_paise=DEMO_AMOUNT_PAISE,
-            phase=InjectionPhase.A, copy_index=1, duplicate_of=None,
+            run_id=run_id,
+            delivery_id=str(uuid.uuid4()),
+            logical_event_id="EVT-001",
+            entitlement_key=entitlement_key,
+            scheme_id=DEMO_SCHEME_ID,
+            beneficiary_id="STU-001",
+            academic_year=DEMO_ACADEMIC_YEAR,
+            installment=1,
+            amount_paise=DEMO_AMOUNT_PAISE,
+            phase=InjectionPhase.A,
+            copy_index=1,
+            duplicate_of=None,
         ).to_message()
         for _ in range(args.copies)
     ]
@@ -90,39 +114,53 @@ def main() -> int:
 
     def invoke(message: dict[str, Any]) -> dict[str, Any]:
         barrier.wait()  # release all invocations at the same instant
-        response = lambda_client.invoke(FunctionName=stack["WorkerFunctionName"], Payload=json.dumps({"event": message}))
+        response = lambda_client.invoke(
+            FunctionName=stack["WorkerFunctionName"], Payload=json.dumps({"event": message})
+        )
         payload = json.loads(response["Payload"].read())
         if response.get("FunctionError"):
             return {"status": f"ERROR: {payload.get('errorMessage')}"}
         return dict(payload)
 
-    print(f"Run {run_id}: invoking {stack['WorkerFunctionName']} {args.copies}x in parallel ({args.processor})")
+    print(
+        f"Run {run_id}: invoking {stack['WorkerFunctionName']} {args.copies}x in parallel ({args.processor})"
+    )
     with ThreadPoolExecutor(max_workers=args.copies) as pool:
         results = list(pool.map(invoke, messages))
 
     statuses = Counter(result["status"] for result in results)
     effects = dynamodb.query(
-        TableName=stack["LedgerTableName"], KeyConditionExpression="run_id = :r",
-        ExpressionAttributeValues={":r": {"S": run_id}}, ConsistentRead=True,
+        TableName=stack["LedgerTableName"],
+        KeyConditionExpression="run_id = :r",
+        ExpressionAttributeValues={":r": {"S": run_id}},
+        ConsistentRead=True,
     )["Items"]
     claim = dynamodb.get_item(
-        TableName=stack["IdempotencyTableName"], Key={"idem_key": {"S": idempotency_key_for(run_id, entitlement_key)}},
+        TableName=stack["IdempotencyTableName"],
+        Key={"idem_key": {"S": idempotency_key_for(run_id, entitlement_key)}},
         ConsistentRead=True,
     ).get("Item")
-    run = dynamodb.get_item(TableName=stack["RunsTableName"], Key={"run_id": {"S": run_id}}, ConsistentRead=True)["Item"]
+    run = dynamodb.get_item(
+        TableName=stack["RunsTableName"], Key={"run_id": {"S": run_id}}, ConsistentRead=True
+    )["Item"]
     debited = budget - int(run["budget_remaining_paise"]["N"])
 
     print(f"Outcomes: {dict(statuses)}")
-    print(f"Ledger effects: {len(effects)}   budget debited: {debited} paise   claim present: {claim is not None}")
+    print(
+        f"Ledger effects: {len(effects)}   budget debited: {debited} paise   claim present: {claim is not None}"
+    )
 
     if args.processor == "naive":
-        print(f"Naive check-then-write made {len(effects)} payment(s) for one entitlement "
-              "(the number can vary between attempts; anything above 1 is the bug).")
+        print(
+            f"Naive check-then-write made {len(effects)} payment(s) for one entitlement "
+            "(the number can vary between attempts; anything above 1 is the bug)."
+        )
         return 0
 
     checks = {
         "exactly one ledger effect": len(effects) == 1,
-        f"{args.copies - 1} duplicates suppressed": statuses.get("DUPLICATE_SUPPRESSED") == args.copies - 1,
+        f"{args.copies - 1} duplicates suppressed": statuses.get("DUPLICATE_SUPPRESSED")
+        == args.copies - 1,
         "one COMMITTED outcome": statuses.get("COMMITTED") == 1,
         "budget debited exactly once": debited == DEMO_AMOUNT_PAISE,
         "idempotency record written": claim is not None,

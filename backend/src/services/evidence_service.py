@@ -54,8 +54,12 @@ class EvidenceService:
             "console_url": console_url(execution_arn) if execution_arn else None,
             "states": timeline["states"],
             "steps": timeline["steps"],
-            "queue": queue_depths(self._settings.deliveries_queue_url, self._settings.deliveries_dlq_url),
-            "log_groups": [g for g in (self._settings.worker_log_group, self._settings.workflow_log_group) if g],
+            "queue": queue_depths(
+                self._settings.deliveries_queue_url, self._settings.deliveries_dlq_url
+            ),
+            "log_groups": [
+                g for g in (self._settings.worker_log_group, self._settings.workflow_log_group) if g
+            ],
             "logs": lines[-LOG_LINES:],
         }
 

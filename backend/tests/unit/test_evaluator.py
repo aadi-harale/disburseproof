@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from domain.evaluator import BUDGET_GUARD, EVERY_ELIGIBLE_PAID, ONE_PAYMENT_PER_ENTITLEMENT, evaluate_run
+from domain.evaluator import (
+    BUDGET_GUARD,
+    EVERY_ELIGIBLE_PAID,
+    ONE_PAYMENT_PER_ENTITLEMENT,
+    evaluate_run,
+)
 from domain.idempotency import key_entitlements
 from domain.models import (
     Delivery,
@@ -19,17 +24,43 @@ AMOUNT = 1_000_000
 
 
 def _effect(key: str, entitlement: Entitlement, n: int) -> LedgerEffect:
-    return LedgerEffect(RUN, f"eff-{n}", key, entitlement.beneficiary_id, entitlement.installment,
-                        entitlement.amount_paise, f"EVT-{n}", f"del-{n}", "2026-09-19T08:00:00.000Z")
+    return LedgerEffect(
+        RUN,
+        f"eff-{n}",
+        key,
+        entitlement.beneficiary_id,
+        entitlement.installment,
+        entitlement.amount_paise,
+        f"EVT-{n}",
+        f"del-{n}",
+        "2026-09-19T08:00:00.000Z",
+    )
 
 
 def _delivery(key: str, entitlement: Entitlement, n: int, outcome: DeliveryOutcome) -> Delivery:
-    return Delivery(RUN, f"del-{n}", f"EVT-{n}", key, entitlement.beneficiary_id, entitlement.installment,
-                    InjectionPhase.A, 1, None, outcome, "2026-09-19T08:00:00.000Z", "req", 1)
+    return Delivery(
+        RUN,
+        f"del-{n}",
+        f"EVT-{n}",
+        key,
+        entitlement.beneficiary_id,
+        entitlement.installment,
+        InjectionPhase.A,
+        1,
+        None,
+        outcome,
+        "2026-09-19T08:00:00.000Z",
+        "req",
+        1,
+    )
 
 
-def _build(entitlements: list[Entitlement], payments: dict[str, int], rejected: set[str], suppressed: dict[str, int]
-           ) -> InvariantReport:
+def _build(
+    entitlements: list[Entitlement],
+    payments: dict[str, int],
+    rejected: set[str],
+    suppressed: dict[str, int],
+) -> InvariantReport:
     eligible = key_entitlements(SCHEME, YEAR, entitlements)
     effects, deliveries, n = [], [], 0
     for key, entitlement in eligible.items():
@@ -44,14 +75,18 @@ def _build(entitlements: list[Entitlement], payments: dict[str, int], rejected: 
             n += 1
             deliveries.append(_delivery(key, entitlement, n, DeliveryOutcome.BUDGET_EXHAUSTED))
     budget = sum(e.amount_paise for e in entitlements)
-    return evaluate_run(eligible=eligible, effects=effects, deliveries=deliveries, budget_paise=budget)
+    return evaluate_run(
+        eligible=eligible, effects=effects, deliveries=deliveries, budget_paise=budget
+    )
 
 
 def _invariant(report: InvariantReport, invariant_id: str) -> bool:
     return next(i.passed for i in report.invariants if i.invariant_id == invariant_id)
 
 
-def test_vulnerable_pattern_fails_with_twelve_double_paid_and_twelve_unpaid(entitlements: list[Entitlement]) -> None:
+def test_vulnerable_pattern_fails_with_twelve_double_paid_and_twelve_unpaid(
+    entitlements: list[Entitlement],
+) -> None:
     keys = list(key_entitlements(SCHEME, YEAR, entitlements))
     doubled, starved = keys[:12], keys[-12:]
     payments = {key: 1 for key in keys}
@@ -83,7 +118,9 @@ def test_vulnerable_pattern_fails_with_twelve_double_paid_and_twelve_unpaid(enti
 
 def test_protected_pattern_passes(entitlements: list[Entitlement]) -> None:
     keys = list(key_entitlements(SCHEME, YEAR, entitlements))
-    report = _build(entitlements, {key: 1 for key in keys}, rejected=set(), suppressed={k: 1 for k in keys[:12]})
+    report = _build(
+        entitlements, {key: 1 for key in keys}, rejected=set(), suppressed={k: 1 for k in keys[:12]}
+    )
     summary = report.summary
 
     assert report.verdict is Verdict.PASS
@@ -95,11 +132,16 @@ def test_protected_pattern_passes(entitlements: list[Entitlement]) -> None:
 
 
 def test_installments_of_the_same_student_are_counted_separately() -> None:
-    entitlements = [Entitlement("STU-001", "Aarav Iyer", AMOUNT, 1), Entitlement("STU-001", "Aarav Iyer", AMOUNT, 2)]
+    entitlements = [
+        Entitlement("STU-001", "Aarav Iyer", AMOUNT, 1),
+        Entitlement("STU-001", "Aarav Iyer", AMOUNT, 2),
+    ]
     keys = list(key_entitlements(SCHEME, YEAR, entitlements))
 
     report = _build(entitlements, {keys[0]: 1, keys[1]: 1}, rejected=set(), suppressed={})
-    assert report.verdict is Verdict.PASS  # one payment per installment is correct, not a double payment
+    assert (
+        report.verdict is Verdict.PASS
+    )  # one payment per installment is correct, not a double payment
 
     report = _build(entitlements, {keys[0]: 2, keys[1]: 0}, rejected=set(), suppressed={})
     assert report.verdict is Verdict.FAIL

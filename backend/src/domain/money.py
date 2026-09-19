@@ -14,11 +14,7 @@ MAX_AMOUNT_PAISE = 1_00_00_000 * PAISE_PER_RUPEE
 
 
 def is_valid_amount_paise(value: object) -> bool:
-    return (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 < value <= MAX_AMOUNT_PAISE
-    )
+    return isinstance(value, int) and not isinstance(value, bool) and 0 < value <= MAX_AMOUNT_PAISE
 
 
 def _group_indian(digits: str) -> str:
@@ -26,7 +22,7 @@ def _group_indian(digits: str) -> str:
     if len(digits) <= 3:
         return digits
     head, tail = digits[:-3], digits[-3:]
-    groups = []
+    groups: list[str] = []
     while len(head) > 2:
         groups.insert(0, head[-2:])
         head = head[:-2]

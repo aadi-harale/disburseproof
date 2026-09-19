@@ -32,8 +32,15 @@ from processors.retry import ConflictRetrier
 
 @pytest.mark.parametrize(
     ("paise", "text"),
-    [(1_000_000, "₹10,000"), (100_000_000, "₹10,00,000"), (12_000_000, "₹1,20,000"), (0, "₹0"),
-     (1_050, "₹10.50"), (-500_000, "-₹5,000"), (10_000_000_000, "₹10,00,00,000")],
+    [
+        (1_000_000, "₹10,000"),
+        (100_000_000, "₹10,00,000"),
+        (12_000_000, "₹1,20,000"),
+        (0, "₹0"),
+        (1_050, "₹10.50"),
+        (-500_000, "-₹5,000"),
+        (10_000_000_000, "₹10,00,00,000"),
+    ],
 )
 def test_format_inr_uses_indian_grouping(paise: int, text: str) -> None:
     assert format_inr(paise) == text
@@ -88,10 +95,28 @@ def test_student_views_are_one_per_entitlement() -> None:
     entitlements = [Entitlement("STU-001", "A", 100, 1), Entitlement("STU-002", "B", 100, 1)]
     eligible = key_entitlements("S", "2026-27", entitlements)
     key_1, key_2 = eligible
-    effects = [LedgerEffect("r", f"e{i}", key_1, "STU-001", 1, 100, "EVT-001", f"d{i}", "t") for i in range(2)]
-    rejected = Delivery("r", "d9", "EVT-002", key_2, "STU-002", 1, InjectionPhase.B, 1, None,
-                        DeliveryOutcome.BUDGET_EXHAUSTED, "t", "req", 1)
-    views = derive_student_views(eligible=eligible, effects=effects, deliveries=[rejected], run_evaluated=False)
+    effects = [
+        LedgerEffect("r", f"e{i}", key_1, "STU-001", 1, 100, "EVT-001", f"d{i}", "t")
+        for i in range(2)
+    ]
+    rejected = Delivery(
+        "r",
+        "d9",
+        "EVT-002",
+        key_2,
+        "STU-002",
+        1,
+        InjectionPhase.B,
+        1,
+        None,
+        DeliveryOutcome.BUDGET_EXHAUSTED,
+        "t",
+        "req",
+        1,
+    )
+    views = derive_student_views(
+        eligible=eligible, effects=effects, deliveries=[rejected], run_evaluated=False
+    )
     assert [(v.beneficiary_id, v.state, v.payments) for v in views] == [
         ("STU-001", StudentState.PAID_TWICE, 2),
         ("STU-002", StudentState.UNPAID, 0),
@@ -110,8 +135,14 @@ def test_receipt_is_deterministic_and_self_describing() -> None:
     )
     batch = BatchMeta("b", "Batch — demo", "S", "2026-27", 100, 1, "hash", "demo", "t")
     kwargs: dict[str, Any] = {
-        "run_id": "run_X", "processor": ProcessorName.PROTECTED, "experiment_id": "exp_1", "fingerprint": "fp",
-        "batch": batch, "report": report, "execution_arn": "arn:x", "started_at": "2026-09-19T08:00:00.000Z",
+        "run_id": "run_X",
+        "processor": ProcessorName.PROTECTED,
+        "experiment_id": "exp_1",
+        "fingerprint": "fp",
+        "batch": batch,
+        "report": report,
+        "execution_arn": "arn:x",
+        "started_at": "2026-09-19T08:00:00.000Z",
         "finished_at": "2026-09-19T08:00:12.500Z",
     }
     first, second = canonical_json(build_receipt(**kwargs)), canonical_json(build_receipt(**kwargs))

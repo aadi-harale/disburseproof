@@ -61,16 +61,25 @@ class NaiveProcessor:
         # INTENTIONALLY UNSAFE: check-then-write. This read is a separate request from
         # the writes below; another delivery can pass the same check before we write.
         if self._store.is_entitlement_claimed(idempotency_key):
-            return self._record(event, context, retrier, DeliveryOutcome.DUPLICATE_SUPPRESSED, None, None)
+            return self._record(
+                event, context, retrier, DeliveryOutcome.DUPLICATE_SUPPRESSED, None, None
+            )
 
         # INTENTIONALLY UNSAFE: an injected race window between the check and the write,
         # standing in for a slow network call or a GC pause.
         self._sleep(self._race_window_seconds)
 
-        debit = retrier.run(lambda _attempt: self._store.debit_budget(event.run_id, event.amount_paise))
+        debit = retrier.run(
+            lambda _attempt: self._store.debit_budget(event.run_id, event.amount_paise)
+        )
         if not debit.accepted:
             return self._record(
-                event, context, retrier, DeliveryOutcome.BUDGET_EXHAUSTED, None, debit.budget_remaining_paise
+                event,
+                context,
+                retrier,
+                DeliveryOutcome.BUDGET_EXHAUSTED,
+                None,
+                debit.budget_remaining_paise,
             )
 
         effect_id = self._effect_id_factory()
@@ -106,5 +115,7 @@ class NaiveProcessor:
         try:
             retrier.run(record)
         except DeliveryAlreadyRecorded:
-            return ProcessingOutcome(ProcessingStatus.ALREADY_PROCESSED, retrier.attempts, effect_id)
+            return ProcessingOutcome(
+                ProcessingStatus.ALREADY_PROCESSED, retrier.attempts, effect_id
+            )
         return ProcessingOutcome(ProcessingStatus(outcome.value), retrier.attempts, effect_id)

@@ -297,7 +297,9 @@ class LedgerEffect:
     committed_at: str
 
     @classmethod
-    def for_event(cls, event: DisbursementEvent, *, effect_id: str, committed_at: str) -> LedgerEffect:
+    def for_event(
+        cls, event: DisbursementEvent, *, effect_id: str, committed_at: str
+    ) -> LedgerEffect:
         return cls(
             run_id=event.run_id,
             effect_id=effect_id,

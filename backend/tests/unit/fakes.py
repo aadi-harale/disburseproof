@@ -51,7 +51,9 @@ class InMemoryLedgerStore:
         run.outcome_counts[delivery.outcome.value] += 1
 
     # ProtectedLedgerPort
-    def commit_payment(self, *, idempotency_key: str, effect: LedgerEffect, delivery: Delivery) -> None:
+    def commit_payment(
+        self, *, idempotency_key: str, effect: LedgerEffect, delivery: Delivery
+    ) -> None:
         with self._lock:
             self._maybe_conflict()
             run = self.runs[effect.run_id]
@@ -86,7 +88,9 @@ class InMemoryLedgerStore:
             self._maybe_conflict()
             run = self.runs[run_id]
             if run.budget_remaining_paise < amount_paise:
-                return BudgetDebit(accepted=False, budget_remaining_paise=run.budget_remaining_paise)
+                return BudgetDebit(
+                    accepted=False, budget_remaining_paise=run.budget_remaining_paise
+                )
             run.budget_remaining_paise -= amount_paise
             return BudgetDebit(accepted=True, budget_remaining_paise=run.budget_remaining_paise)
 

@@ -46,7 +46,9 @@ def test_duplicate_selection_matches_the_golden_demo() -> None:
 
 def test_duplicate_selection_is_deterministic_and_seed_dependent() -> None:
     ids = logical_event_ids(100)
-    assert select_duplicates(ids, "FC-2026-0918", 12) == select_duplicates(list(ids), "FC-2026-0918", 12)
+    assert select_duplicates(ids, "FC-2026-0918", 12) == select_duplicates(
+        list(ids), "FC-2026-0918", 12
+    )
     assert select_duplicates(ids, "FC-2026-0918", 12) != select_duplicates(ids, "another-seed", 12)
 
 
@@ -80,7 +82,9 @@ def test_phase_split_rejects_unknown_ids() -> None:
         split_phases(logical_event_ids(10), ["EVT-011"])
 
 
-def test_definition_has_only_canonical_fields(definition: ExperimentDefinition, batch: BatchMeta) -> None:
+def test_definition_has_only_canonical_fields(
+    definition: ExperimentDefinition, batch: BatchMeta
+) -> None:
     data = definition.to_dict()
     assert set(data) == {
         "version", "batch_id", "batch_content_sha256", "seed", "logical_events", "duplicate_count",

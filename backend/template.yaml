@@ -383,7 +383,7 @@ Resources:
       Events:
         CreateBatch: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /batches } }
         ListBatches: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /batches } }
-        GetBatch: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /batches/{batch_id} } }
+        GetBatch: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/batches/{batch_id}" } }
 
   ExperimentsApiFunction:
     Type: AWS::Serverless::Function
@@ -396,7 +396,7 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref ExperimentsTable }
       Events:
         CreateExperiment: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /experiments } }
-        GetExperiment: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /experiments/{experiment_id} } }
+        GetExperiment: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/experiments/{experiment_id}" } }
 
   RunsApiFunction:
     Type: AWS::Serverless::Function
@@ -422,11 +422,11 @@ Resources:
       Events:
         StartRun: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: POST, Path: /runs } }
         ListRuns: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs } }
-        GetRun: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs/{run_id} } }
-        ListStudents: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs/{run_id}/students } }
+        GetRun: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}" } }
+        ListStudents: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/students" } }
         GetStudent:
           Type: HttpApi
-          Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs/{run_id}/students/{beneficiary_id} }
+          Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/students/{beneficiary_id}" }
         GetOverview: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /overview } }
 
   ReceiptsApiFunction:
@@ -460,8 +460,8 @@ Resources:
                 - !GetAtt WorkerLogGroup.Arn
                 - !GetAtt WorkflowLogGroup.Arn
       Events:
-        GetReceipt: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs/{run_id}/receipt } }
-        GetEvidence: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: /runs/{run_id}/evidence } }
+        GetReceipt: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/receipt" } }
+        GetEvidence: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Method: GET, Path: "/runs/{run_id}/evidence" } }
 
   # ---------------------------------------------------------------------------
   # Demo seed: the golden batch and experiment exist as soon as the stack does.

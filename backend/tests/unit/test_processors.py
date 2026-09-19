@@ -56,7 +56,13 @@ def _replay(
     context = ProcessingContext("req-sim", clock)
     rng = random.Random(order_seed)
     for phase in (InjectionPhase.A, InjectionPhase.B):
-        events = plan_phase(run_id=RUN_ID, phase=phase, definition=definition, batch=batch, entitlements=entitlements)
+        events = plan_phase(
+            run_id=RUN_ID,
+            phase=phase,
+            definition=definition,
+            batch=batch,
+            entitlements=entitlements,
+        )
         arrivals = events + rng.sample(events, k=4)  # SQS may redeliver the same delivery
         rng.shuffle(arrivals)  # ... and does not preserve order
         for event in arrivals:
@@ -67,13 +73,20 @@ def _replay(
 
 @pytest.mark.parametrize("order_seed", range(25))
 def test_vulnerable_replay_reproduces_the_headline_numbers(
-    order_seed: int, batch: BatchMeta, entitlements: list[Entitlement],
-    definition: ExperimentDefinition, clock: Callable[[], str],
+    order_seed: int,
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
     store = _replay(ProcessorName.VULNERABLE, batch, entitlements, definition, clock, order_seed)
     eligible = key_entitlements(batch.scheme_id, batch.academic_year, entitlements)
-    report = evaluate_run(eligible=eligible, effects=store.effects, deliveries=store.recorded(RUN_ID),
-                          budget_paise=batch.total_budget_paise)
+    report = evaluate_run(
+        eligible=eligible,
+        effects=store.effects,
+        deliveries=store.recorded(RUN_ID),
+        budget_paise=batch.total_budget_paise,
+    )
     summary = report.summary
 
     assert summary.deliveries == 112  # redeliveries were absorbed, not recorded twice
@@ -95,13 +108,20 @@ def test_vulnerable_replay_reproduces_the_headline_numbers(
 
 @pytest.mark.parametrize("order_seed", range(25))
 def test_protected_replay_pays_everyone_exactly_once(
-    order_seed: int, batch: BatchMeta, entitlements: list[Entitlement],
-    definition: ExperimentDefinition, clock: Callable[[], str],
+    order_seed: int,
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
     store = _replay(ProcessorName.PROTECTED, batch, entitlements, definition, clock, order_seed)
     eligible = key_entitlements(batch.scheme_id, batch.academic_year, entitlements)
-    report = evaluate_run(eligible=eligible, effects=store.effects, deliveries=store.recorded(RUN_ID),
-                          budget_paise=batch.total_budget_paise)
+    report = evaluate_run(
+        eligible=eligible,
+        effects=store.effects,
+        deliveries=store.recorded(RUN_ID),
+        budget_paise=batch.total_budget_paise,
+    )
     summary = report.summary
 
     assert (summary.deliveries, summary.ledger_effects, summary.paid_once) == (112, 100, 100)
@@ -113,14 +133,25 @@ def test_protected_replay_pays_everyone_exactly_once(
     assert len(store.claims) == 100
 
 
-def _event(entitlements: list[Entitlement], batch: BatchMeta, definition: ExperimentDefinition) -> DisbursementEvent:
-    events = plan_phase(run_id=RUN_ID, phase=InjectionPhase.A, definition=definition, batch=batch,
-                        entitlements=entitlements)
+def _event(
+    entitlements: list[Entitlement], batch: BatchMeta, definition: ExperimentDefinition
+) -> DisbursementEvent:
+    events = plan_phase(
+        run_id=RUN_ID,
+        phase=InjectionPhase.A,
+        definition=definition,
+        batch=batch,
+        entitlements=entitlements,
+    )
     return events[0]
 
 
-def test_protected_absorbs_an_exact_redelivery(batch: BatchMeta, entitlements: list[Entitlement],
-                                               definition: ExperimentDefinition, clock: Callable[[], str]) -> None:
+def test_protected_absorbs_an_exact_redelivery(
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
+) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise})
     processor = ProtectedProcessor(store, retrier_factory=_no_sleep_retrier)
     event = _event(entitlements, batch, definition)
@@ -132,37 +163,56 @@ def test_protected_absorbs_an_exact_redelivery(batch: BatchMeta, entitlements: l
     assert store.runs[RUN_ID].delivered_count == 1  # a redelivery is not a new delivery
 
 
-def test_protected_suppresses_a_business_duplicate(batch: BatchMeta, entitlements: list[Entitlement],
-                                                   definition: ExperimentDefinition, clock: Callable[[], str]) -> None:
+def test_protected_suppresses_a_business_duplicate(
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
+) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise})
     processor = ProtectedProcessor(store, retrier_factory=_no_sleep_retrier)
     first = _event(entitlements, batch, definition)
-    retry = replace(first, delivery_id="another-delivery-id", copy_index=2, duplicate_of=first.logical_event_id)
+    retry = replace(
+        first, delivery_id="another-delivery-id", copy_index=2, duplicate_of=first.logical_event_id
+    )
     context = ProcessingContext("req", clock)
 
-    assert processor.process(retry, context).status is ProcessingStatus.COMMITTED  # arrival order is not send order
+    assert (
+        processor.process(retry, context).status is ProcessingStatus.COMMITTED
+    )  # arrival order is not send order
     assert processor.process(first, context).status is ProcessingStatus.DUPLICATE_SUPPRESSED
     assert len(store.effects) == 1
     assert store.outcomes(RUN_ID)[DeliveryOutcome.DUPLICATE_SUPPRESSED] == 1
 
 
 def test_protected_records_budget_exhaustion_with_the_budget_it_saw(
-    batch: BatchMeta, entitlements: list[Entitlement], definition: ExperimentDefinition, clock: Callable[[], str]
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
     store = InMemoryLedgerStore({RUN_ID: AMOUNT - 1})
     processor = ProtectedProcessor(store, retrier_factory=_no_sleep_retrier)
-    outcome = processor.process(_event(entitlements, batch, definition), ProcessingContext("req", clock))
+    outcome = processor.process(
+        _event(entitlements, batch, definition), ProcessingContext("req", clock)
+    )
     assert outcome.status is ProcessingStatus.BUDGET_EXHAUSTED
     assert not store.effects and not store.claims
     (delivery,) = store.recorded(RUN_ID)
     assert delivery.budget_remaining_paise_at_rejection == AMOUNT - 1
 
 
-def test_protected_retries_write_conflicts(batch: BatchMeta, entitlements: list[Entitlement],
-                                           definition: ExperimentDefinition, clock: Callable[[], str]) -> None:
+def test_protected_retries_write_conflicts(
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
+) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise}, conflicts_before_success=3)
     processor = ProtectedProcessor(store, retrier_factory=_no_sleep_retrier)
-    outcome = processor.process(_event(entitlements, batch, definition), ProcessingContext("req", clock))
+    outcome = processor.process(
+        _event(entitlements, batch, definition), ProcessingContext("req", clock)
+    )
     assert outcome.status is ProcessingStatus.COMMITTED
     assert outcome.attempts == 4
     assert store.recorded(RUN_ID)[0].attempt == 4
@@ -170,7 +220,10 @@ def test_protected_retries_write_conflicts(batch: BatchMeta, entitlements: list[
 
 
 def test_protected_gives_up_after_six_conflicting_attempts(
-    batch: BatchMeta, entitlements: list[Entitlement], definition: ExperimentDefinition, clock: Callable[[], str]
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise}, conflicts_before_success=6)
     processor = ProtectedProcessor(store, retrier_factory=_no_sleep_retrier)
@@ -179,12 +232,18 @@ def test_protected_gives_up_after_six_conflicting_attempts(
     assert not store.effects and not store.deliveries  # nothing half-written; SQS will redeliver
 
 
-def test_vulnerable_pays_a_business_duplicate_twice(batch: BatchMeta, entitlements: list[Entitlement],
-                                                    definition: ExperimentDefinition, clock: Callable[[], str]) -> None:
+def test_vulnerable_pays_a_business_duplicate_twice(
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
+) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise})
     processor = build_processor(ProcessorName.VULNERABLE, store, retrier_factory=_no_sleep_retrier)
     first = _event(entitlements, batch, definition)
-    retry = replace(first, delivery_id="another-delivery-id", copy_index=2, duplicate_of=first.logical_event_id)
+    retry = replace(
+        first, delivery_id="another-delivery-id", copy_index=2, duplicate_of=first.logical_event_id
+    )
     context = ProcessingContext("req", clock)
 
     assert processor.process(first, context).status is ProcessingStatus.COMMITTED
@@ -193,17 +252,30 @@ def test_vulnerable_pays_a_business_duplicate_twice(batch: BatchMeta, entitlemen
     assert len(store.effects) == 2
 
 
-def test_inconsistent_entitlement_key_is_rejected(batch: BatchMeta, entitlements: list[Entitlement],
-                                                  definition: ExperimentDefinition, clock: Callable[[], str]) -> None:
+def test_inconsistent_entitlement_key_is_rejected(
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
+) -> None:
     store = InMemoryLedgerStore({RUN_ID: batch.total_budget_paise})
-    tampered = replace(_event(entitlements, batch, definition), entitlement_key="DEMO-POSTMATRIC#STU-999#2026-27#INST-1")
+    tampered = replace(
+        _event(entitlements, batch, definition),
+        entitlement_key="DEMO-POSTMATRIC#STU-999#2026-27#INST-1",
+    )
     with pytest.raises(ValidationError):
         ProtectedProcessor(store).process(tampered, ProcessingContext("req", clock))
     assert not store.effects
 
 
-def _race(processor_factory: Callable[[InMemoryLedgerStore], object], copies: int, clock: Callable[[], str],
-          batch: BatchMeta, entitlements: list[Entitlement], definition: ExperimentDefinition) -> InMemoryLedgerStore:
+def _race(
+    processor_factory: Callable[[InMemoryLedgerStore], object],
+    copies: int,
+    clock: Callable[[], str],
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+) -> InMemoryLedgerStore:
     """`copies` distinct deliveries of one entitlement, started at the same instant."""
     store = InMemoryLedgerStore({RUN_ID: copies * AMOUNT})
     processor = processor_factory(store)
@@ -214,7 +286,9 @@ def _race(processor_factory: Callable[[InMemoryLedgerStore], object], copies: in
     def worker(index: int) -> None:
         try:
             barrier.wait()
-            processor.process(replace(base, delivery_id=f"race-{index}"), ProcessingContext(f"req-{index}", clock))  # type: ignore[attr-defined]
+            processor.process(
+                replace(base, delivery_id=f"race-{index}"), ProcessingContext(f"req-{index}", clock)
+            )  # type: ignore[attr-defined]
         except BaseException as error:  # surfaced below
             errors.append(error)
 
@@ -228,17 +302,35 @@ def _race(processor_factory: Callable[[InMemoryLedgerStore], object], copies: in
 
 
 def test_protected_allows_exactly_one_payment_under_concurrency(
-    batch: BatchMeta, entitlements: list[Entitlement], definition: ExperimentDefinition, clock: Callable[[], str]
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
-    store = _race(lambda s: ProtectedProcessor(s, retrier_factory=_no_sleep_retrier), 20, clock,
-                  batch, entitlements, definition)
+    store = _race(
+        lambda s: ProtectedProcessor(s, retrier_factory=_no_sleep_retrier),
+        20,
+        clock,
+        batch,
+        entitlements,
+        definition,
+    )
     assert len(store.effects) == 1
     assert store.outcomes(RUN_ID)[DeliveryOutcome.DUPLICATE_SUPPRESSED] == 19
 
 
 def test_naive_check_then_write_pays_more_than_once_under_concurrency(
-    batch: BatchMeta, entitlements: list[Entitlement], definition: ExperimentDefinition, clock: Callable[[], str]
+    batch: BatchMeta,
+    entitlements: list[Entitlement],
+    definition: ExperimentDefinition,
+    clock: Callable[[], str],
 ) -> None:
-    store = _race(lambda s: NaiveProcessor(s, race_window_seconds=0.05, retrier_factory=_no_sleep_retrier), 20,
-                  clock, batch, entitlements, definition)
+    store = _race(
+        lambda s: NaiveProcessor(s, race_window_seconds=0.05, retrier_factory=_no_sleep_retrier),
+        20,
+        clock,
+        batch,
+        entitlements,
+        definition,
+    )
     assert len(store.effects) > 1  # every copy passed the check before any copy wrote the claim

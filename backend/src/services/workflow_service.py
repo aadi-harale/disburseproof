@@ -28,7 +28,14 @@ from domain.evaluator import evaluate_run
 from domain.fingerprint import canonical_json
 from domain.idempotency import key_entitlements
 from domain.injection import plan_phase
-from domain.models import FailureReason, InjectionPhase, InvariantReport, ProcessorName, RunPhase, RunStatus
+from domain.models import (
+    FailureReason,
+    InjectionPhase,
+    InvariantReport,
+    ProcessorName,
+    RunPhase,
+    RunStatus,
+)
 from domain.receipt import build_receipt, receipt_s3_key
 
 DRAIN_TIMEOUT_ERROR = "DRAIN_TIMEOUT"
@@ -100,7 +107,9 @@ class WorkflowService:
     def check_drain(self, run_id: str, phase: InjectionPhase, iteration: int) -> dict[str, Any]:
         """One pass of the drain loop. `drained` decides; queue depths are context only."""
         run = self._runs.require(run_id)
-        target = int(run["phase_a_target"] if phase is InjectionPhase.A else run["expected_deliveries"])
+        target = int(
+            run["phase_a_target"] if phase is InjectionPhase.A else run["expected_deliveries"]
+        )
         delivered = int(run.get("delivered_count", 0))
         next_iteration = iteration + 1
         drained = delivered >= target
@@ -126,11 +135,16 @@ class WorkflowService:
                 f"Recorded {len(deliveries)} deliveries, expected {run['expected_deliveries']}"
             )
         return evaluate_run(
-            eligible=eligible, effects=effects, deliveries=deliveries, budget_paise=meta.total_budget_paise
+            eligible=eligible,
+            effects=effects,
+            deliveries=deliveries,
+            budget_paise=meta.total_budget_paise,
         )
 
     def evaluate(self, run_id: str) -> dict[str, Any]:
-        run = self._runs.update(run_id, {"phase": RunPhase.EVALUATING.value}, require_status=RunStatus.RUNNING)
+        run = self._runs.update(
+            run_id, {"phase": RunPhase.EVALUATING.value}, require_status=RunStatus.RUNNING
+        )
         report = self._evaluate(run)
         self._runs.update(
             run_id,
@@ -150,10 +164,15 @@ class WorkflowService:
         run = self._runs.require(run_id)
         if run.get("status") == RunStatus.COMPLETED.value and run.get("receipt_sha256"):
             # Step Functions retried this task after it had already succeeded.
-            return {"receipt_s3_key": run["receipt_s3_key"], "receipt_sha256": run["receipt_sha256"]}
+            return {
+                "receipt_s3_key": run["receipt_s3_key"],
+                "receipt_sha256": run["receipt_sha256"],
+            }
         report = self._evaluate(run)
         if report.verdict.value != run.get("verdict"):
-            raise EvaluationMismatchError(f"stored verdict {run.get('verdict')}, recomputed {report.verdict}")
+            raise EvaluationMismatchError(
+                f"stored verdict {run.get('verdict')}, recomputed {report.verdict}"
+            )
         experiment = self._experiments.require(run["experiment_id"])
         receipt = build_receipt(
             run_id=run_id,

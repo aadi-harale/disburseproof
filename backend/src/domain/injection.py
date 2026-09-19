@@ -35,11 +35,17 @@ from domain.models import (
 DELIVERY_ID_NAMESPACE = uuid.UUID("6f1b8f5e-2d0c-4a7e-9b2a-3c5d7e9f1a24")
 
 
-def derive_delivery_id(run_id: str, phase: InjectionPhase, logical_event_id: str, copy_index: int) -> str:
-    return str(uuid.uuid5(DELIVERY_ID_NAMESPACE, f"{run_id}:{phase.value}:{logical_event_id}:{copy_index}"))
+def derive_delivery_id(
+    run_id: str, phase: InjectionPhase, logical_event_id: str, copy_index: int
+) -> str:
+    return str(
+        uuid.uuid5(DELIVERY_ID_NAMESPACE, f"{run_id}:{phase.value}:{logical_event_id}:{copy_index}")
+    )
 
 
-def verify_batch_unchanged(definition: ExperimentDefinition, entitlements: Iterable[Entitlement]) -> None:
+def verify_batch_unchanged(
+    definition: ExperimentDefinition, entitlements: Iterable[Entitlement]
+) -> None:
     """Refuse to inject if the batch no longer matches the hash in the definition."""
     actual = batch_content_sha256(entitlements)
     if actual != definition.batch_content_sha256:
@@ -81,7 +87,10 @@ def plan_phase(
                 delivery_id=derive_delivery_id(run_id, phase, logical_id, copy_index),
                 logical_event_id=logical_id,
                 entitlement_key=build_entitlement_key(
-                    batch.scheme_id, entitlement.beneficiary_id, batch.academic_year, entitlement.installment
+                    batch.scheme_id,
+                    entitlement.beneficiary_id,
+                    batch.academic_year,
+                    entitlement.installment,
                 ),
                 scheme_id=batch.scheme_id,
                 beneficiary_id=entitlement.beneficiary_id,

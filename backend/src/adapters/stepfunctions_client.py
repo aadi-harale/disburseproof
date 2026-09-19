@@ -94,8 +94,12 @@ def state_timeline(execution_arn: str, client: Any | None = None) -> dict[str, A
         entered = event.get("stateEnteredEventDetails")
         exited = event.get("stateExitedEventDetails")
         if entered:
-            step = {"name": entered["name"], "type": event["type"].replace("StateEntered", ""),
-                    "entered": event["timestamp"], "exited": None}
+            step = {
+                "name": entered["name"],
+                "type": event["type"].replace("StateEntered", ""),
+                "entered": event["timestamp"],
+                "exited": None,
+            }
             steps.append(step)
             open_steps[entered["name"]] = step
         elif exited and exited["name"] in open_steps:
@@ -105,8 +109,13 @@ def state_timeline(execution_arn: str, client: Any | None = None) -> dict[str, A
     for step in steps:
         row = summary.setdefault(
             step["name"],
-            {"name": step["name"], "type": step["type"], "runs": 0, "total_ms": 0,
-             "first_entered_at": to_iso(step["entered"])},
+            {
+                "name": step["name"],
+                "type": step["type"],
+                "runs": 0,
+                "total_ms": 0,
+                "first_entered_at": to_iso(step["entered"]),
+            },
         )
         row["runs"] += 1
         if step["exited"] is not None:
@@ -119,7 +128,9 @@ def state_timeline(execution_arn: str, client: Any | None = None) -> dict[str, A
                 "name": step["name"],
                 "type": step["type"],
                 "entered_at": to_iso(step["entered"]),
-                "duration_ms": None if step["exited"] is None else _ms(step["entered"], step["exited"]),
+                "duration_ms": None
+                if step["exited"] is None
+                else _ms(step["entered"], step["exited"]),
             }
             for step in steps[:300]
         ],

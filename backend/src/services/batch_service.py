@@ -57,11 +57,15 @@ class BatchService:
         scheme_id = optional_str(body, "scheme_id", max_length=32) or "DEMO-SCHEME"
         academic_year = optional_str(body, "academic_year", max_length=7) or DEMO_ACADEMIC_YEAR
         if not SCHEME_ID_PATTERN.fullmatch(scheme_id):
-            raise ValidationError("scheme_id must be 2-32 capital letters, digits or '-'",
-                                  details=[FieldError("scheme_id", "has an invalid format")])
+            raise ValidationError(
+                "scheme_id must be 2-32 capital letters, digits or '-'",
+                details=[FieldError("scheme_id", "has an invalid format")],
+            )
         if not ACADEMIC_YEAR_PATTERN.fullmatch(academic_year):
-            raise ValidationError("academic_year must look like 2026-27",
-                                  details=[FieldError("academic_year", "must look like 2026-27")])
+            raise ValidationError(
+                "academic_year must look like 2026-27",
+                details=[FieldError("academic_year", "must look like 2026-27")],
+            )
 
         if has_generate:
             spec = body["generate"]
@@ -74,7 +78,9 @@ class BatchService:
         else:
             text = body["csv"]
             if not isinstance(text, str) or len(text) > MAX_CSV_CHARACTERS:
-                raise ValidationError(f"csv must be CSV text of at most {MAX_CSV_CHARACTERS} characters")
+                raise ValidationError(
+                    f"csv must be CSV text of at most {MAX_CSV_CHARACTERS} characters"
+                )
             report = parse_entitlements_csv(text)
             preview = {
                 "valid": report.is_valid,
@@ -88,22 +94,34 @@ class BatchService:
                 return 200, {"preview": preview}
             if not report.is_valid:
                 raise ValidationError(
-                    f"The CSV has {len(report.errors)} problem(s); nothing was saved", details=list(report.errors)
+                    f"The CSV has {len(report.errors)} problem(s); nothing was saved",
+                    details=list(report.errors),
                 )
             entitlements = list(report.entitlements)
             source, default_name = "csv", f"Uploaded batch ({len(entitlements)} entitlements)"
 
         meta = self._build_meta(
-            batch_id=self._new_id(), name=name or default_name, scheme_id=scheme_id,
-            academic_year=academic_year, entitlements=entitlements, source=source, created_at=self._now(),
+            batch_id=self._new_id(),
+            name=name or default_name,
+            scheme_id=scheme_id,
+            academic_year=academic_year,
+            entitlements=entitlements,
+            source=source,
+            created_at=self._now(),
         )
         self._batches.put_batch(meta, entitlements)
         return 201, {"batch": public_batch(meta)}
 
     @staticmethod
     def _build_meta(
-        *, batch_id: str, name: str, scheme_id: str, academic_year: str,
-        entitlements: list[Entitlement], source: str, created_at: str,
+        *,
+        batch_id: str,
+        name: str,
+        scheme_id: str,
+        academic_year: str,
+        entitlements: list[Entitlement],
+        source: str,
+        created_at: str,
     ) -> BatchMeta:
         return BatchMeta(
             batch_id=batch_id,
@@ -125,15 +143,21 @@ class BatchService:
         return {
             "batch": public_batch(meta),
             "entitlements": [e.to_dict() for e in self._batches.list_entitlements(batch_id)],
-            "experiments": [public_experiment(x) for x in self._experiments.list_for_batch(batch_id)],
+            "experiments": [
+                public_experiment(x) for x in self._experiments.list_for_batch(batch_id)
+            ],
         }
 
     def ensure_demo_batch(self) -> BatchMeta:
         """Write the golden demo batch. Content is fixed, so rewriting it is harmless."""
         entitlements = demo_entitlements()
         meta = self._build_meta(
-            batch_id=DEMO_BATCH_ID, name=DEMO_BATCH_NAME, scheme_id=DEMO_SCHEME_ID,
-            academic_year=DEMO_ACADEMIC_YEAR, entitlements=entitlements, source="demo",
+            batch_id=DEMO_BATCH_ID,
+            name=DEMO_BATCH_NAME,
+            scheme_id=DEMO_SCHEME_ID,
+            academic_year=DEMO_ACADEMIC_YEAR,
+            entitlements=entitlements,
+            source="demo",
             created_at=DEMO_CREATED_AT,
         )
         self._batches.put_batch(meta, entitlements)

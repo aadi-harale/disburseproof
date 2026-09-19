@@ -38,7 +38,10 @@ _processors: dict[str, DisbursementProcessor] = {}
 def _on_conflict_retry(failures: int, delay_seconds: float) -> None:
     # The Runs item is a deliberate hot key; conflicts are expected and measured.
     metrics.add_metric(name="TransactionConflictRetries", unit=MetricUnit.Count, value=1)
-    logger.info("write conflict, backing off", extra={"conflicts": failures, "backoff_ms": round(delay_seconds * 1000)})
+    logger.info(
+        "write conflict, backing off",
+        extra={"conflicts": failures, "backoff_ms": round(delay_seconds * 1000)},
+    )
 
 
 def _new_retrier() -> ConflictRetrier:
@@ -63,10 +66,14 @@ def _processor_for(run_id: str) -> DisbursementProcessor:
 def _process(body: dict[str, Any], request_id: str) -> ProcessingOutcome:
     started = time.perf_counter()
     event = DisbursementEvent.from_message(body)
-    logger.append_keys(run_id=event.run_id, delivery_id=event.delivery_id, logical_event_id=event.logical_event_id)
+    logger.append_keys(
+        run_id=event.run_id, delivery_id=event.delivery_id, logical_event_id=event.logical_event_id
+    )
     processor = _processor_for(event.run_id)
     logger.append_keys(processor=processor.name.value)
-    outcome = processor.process(event, ProcessingContext(lambda_request_id=request_id, now=utc_now_iso))
+    outcome = processor.process(
+        event, ProcessingContext(lambda_request_id=request_id, now=utc_now_iso)
+    )
     logger.info(
         "delivery processed",
         extra={
@@ -76,7 +83,11 @@ def _process(body: dict[str, Any], request_id: str) -> ProcessingOutcome:
             "effect_id": outcome.effect_id,
         },
     )
-    metrics.add_metric(name=f"Deliveries{outcome.status.value.title().replace('_', '')}", unit=MetricUnit.Count, value=1)
+    metrics.add_metric(
+        name=f"Deliveries{outcome.status.value.title().replace('_', '')}",
+        unit=MetricUnit.Count,
+        value=1,
+    )
     return outcome
 
 
@@ -90,7 +101,9 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 _process(json.loads(record["body"]), context.aws_request_id)
             except Exception:
                 # Report only this message; SQS redelivers it, then dead-letters it after 5 receives.
-                logger.exception("delivery failed, SQS will redeliver", extra={"message_id": record["messageId"]})
+                logger.exception(
+                    "delivery failed, SQS will redeliver", extra={"message_id": record["messageId"]}
+                )
                 failures.append({"itemIdentifier": record["messageId"]})
             finally:
                 logger.remove_keys(CONTEXT_KEYS)
@@ -101,6 +114,12 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             outcome = _process(event["event"], context.aws_request_id)
         finally:
             logger.remove_keys(CONTEXT_KEYS)
-        return {"status": outcome.status.value, "attempts": outcome.attempts, "effect_id": outcome.effect_id}
+        return {
+            "status": outcome.status.value,
+            "attempts": outcome.attempts,
+            "effect_id": outcome.effect_id,
+        }
 
-    raise ValueError("Unsupported event: expected SQS Records or a direct {'event': ...} invocation")
+    raise ValueError(
+        "Unsupported event: expected SQS Records or a direct {'event': ...} invocation"
+    )

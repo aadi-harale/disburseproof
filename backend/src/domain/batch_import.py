@@ -62,7 +62,9 @@ def _parse_row(line: int, values: dict[str, str]) -> tuple[Entitlement | None, l
     if not name:
         errors.append(FieldError("display_name", "is required", line))
     elif len(name) > MAX_DISPLAY_NAME_LENGTH:
-        errors.append(FieldError("display_name", f"at most {MAX_DISPLAY_NAME_LENGTH} characters", line))
+        errors.append(
+            FieldError("display_name", f"at most {MAX_DISPLAY_NAME_LENGTH} characters", line)
+        )
     elif CONTROL_CHARACTERS.search(name):
         errors.append(FieldError("display_name", "contains control characters", line))
 
@@ -70,13 +72,17 @@ def _parse_row(line: int, values: dict[str, str]) -> tuple[Entitlement | None, l
     amount = int(amount_text) if DIGITS.fullmatch(amount_text) else None
     if amount is None or not is_valid_amount_paise(amount):
         errors.append(
-            FieldError("amount_paise", f"a whole number of paise from 1 to {MAX_AMOUNT_PAISE}", line)
+            FieldError(
+                "amount_paise", f"a whole number of paise from 1 to {MAX_AMOUNT_PAISE}", line
+            )
         )
 
     installment_text = values["installment"]
     installment = int(installment_text) if DIGITS.fullmatch(installment_text) else None
     if installment is None or not 1 <= installment <= MAX_INSTALLMENT:
-        errors.append(FieldError("installment", f"a whole number from 1 to {MAX_INSTALLMENT}", line))
+        errors.append(
+            FieldError("installment", f"a whole number from 1 to {MAX_INSTALLMENT}", line)
+        )
 
     if errors or amount is None or installment is None:
         return None, errors
@@ -142,7 +148,9 @@ def parse_entitlements_csv(text: str) -> ImportReport:
             continue
         identity = entitlement.order_key
         if identity in first_line_of:
-            message = f"duplicate of line {first_line_of[identity]} (same beneficiary_id and installment)"
+            message = (
+                f"duplicate of line {first_line_of[identity]} (same beneficiary_id and installment)"
+            )
             preview.errors.append(message)
             errors.append(FieldError("beneficiary_id", message, line))
             continue
@@ -158,9 +166,13 @@ def generated_entitlements(count: int, amount_paise: int) -> list[Entitlement]:
     """Validate a generate request and build STU-001 ... with synthetic names."""
     details: list[FieldError] = []
     if not 1 <= count <= MAX_GENERATED_ENTITLEMENTS:
-        details.append(FieldError("generate.count", f"must be between 1 and {MAX_GENERATED_ENTITLEMENTS}"))
+        details.append(
+            FieldError("generate.count", f"must be between 1 and {MAX_GENERATED_ENTITLEMENTS}")
+        )
     if not is_valid_amount_paise(amount_paise):
-        details.append(FieldError("generate.amount_paise", f"must be between 1 and {MAX_AMOUNT_PAISE}"))
+        details.append(
+            FieldError("generate.amount_paise", f"must be between 1 and {MAX_AMOUNT_PAISE}")
+        )
     if details:
         raise ValidationError("Invalid generate request", details=details)
     return generate_entitlements(count, amount_paise)

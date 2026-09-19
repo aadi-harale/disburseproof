@@ -43,7 +43,10 @@ class SqsPublisher:
         for start in range(0, len(events), SQS_BATCH_LIMIT):
             chunk = events[start : start + SQS_BATCH_LIMIT]
             entries = [
-                {"Id": str(index), "MessageBody": json.dumps(event.to_message(), separators=(",", ":"))}
+                {
+                    "Id": str(index),
+                    "MessageBody": json.dumps(event.to_message(), separators=(",", ":")),
+                }
                 for index, event in enumerate(chunk)
             ]
             self._send_with_retry(entries)

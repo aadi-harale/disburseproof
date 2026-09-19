@@ -76,7 +76,9 @@ def select_duplicates(logical_ids: Sequence[str], seed: str, duplicate_count: in
     reader can recompute it by hand without our code.
     """
     validate_duplicate_count(len(logical_ids), duplicate_count)
-    ranked = sorted(logical_ids, key=lambda logical_id: (sha256_hex(f"{seed}:{logical_id}"), logical_id))
+    ranked = sorted(
+        logical_ids, key=lambda logical_id: (sha256_hex(f"{seed}:{logical_id}"), logical_id)
+    )
     return sorted(ranked[:duplicate_count])
 
 

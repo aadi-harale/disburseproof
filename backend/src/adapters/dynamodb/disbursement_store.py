@@ -39,7 +39,12 @@ RECORD_RUN_COUNTER = 1  # Update Run: count the delivery and its outcome
 CONDITION_FAILED = "ConditionalCheckFailed"
 # Cancellation codes that mean "contention, nothing written, try again".
 TRANSIENT_CANCELLATION_CODES = frozenset(
-    {"TransactionConflict", "ThrottlingError", "ProvisionedThroughputExceeded", "RequestLimitExceeded"}
+    {
+        "TransactionConflict",
+        "ThrottlingError",
+        "ProvisionedThroughputExceeded",
+        "RequestLimitExceeded",
+    }
 )
 # Error codes on single-item requests that mean the same thing.
 TRANSIENT_ERROR_CODES = frozenset(
@@ -135,7 +140,9 @@ class DynamoDisbursementStore:
 
     # --- Protected --------------------------------------------------------------
 
-    def commit_payment(self, *, idempotency_key: str, effect: LedgerEffect, delivery: Delivery) -> None:
+    def commit_payment(
+        self, *, idempotency_key: str, effect: LedgerEffect, delivery: Delivery
+    ) -> None:
         items: list[dict[str, Any]] = [{}, {}, {}, {}]
         items[COMMIT_IDEMPOTENCY] = {
             "Put": {
@@ -162,7 +169,9 @@ class DynamoDisbursementStore:
                 "ReturnValuesOnConditionCheckFailure": "ALL_OLD",
             }
         }
-        items[COMMIT_LEDGER] = {"Put": {"TableName": self._ledger, "Item": to_item(effect_to_row(effect))}}
+        items[COMMIT_LEDGER] = {
+            "Put": {"TableName": self._ledger, "Item": to_item(effect_to_row(effect))}
+        }
         items[COMMIT_DELIVERY] = {
             "Put": {
                 "TableName": self._deliveries,
@@ -198,7 +207,10 @@ class DynamoDisbursementStore:
                 "UpdateExpression": "SET last_delivery_at = :now ADD delivered_count :one, #counter :one",
                 "ConditionExpression": "attribute_exists(run_id)",
                 "ExpressionAttributeNames": {"#counter": OUTCOME_COUNTER[delivery.outcome]},
-                "ExpressionAttributeValues": {":one": {"N": "1"}, ":now": {"S": delivery.processed_at}},
+                "ExpressionAttributeValues": {
+                    ":one": {"N": "1"},
+                    ":now": {"S": delivery.processed_at},
+                },
             }
         }
         try:
@@ -236,7 +248,9 @@ class DynamoDisbursementStore:
             if code == "ConditionalCheckFailedException":
                 remaining = _remaining_budget(error.response)
                 if remaining is None:
-                    raise UnexpectedCancellation("run record not found while debiting budget") from error
+                    raise UnexpectedCancellation(
+                        "run record not found while debiting budget"
+                    ) from error
                 return BudgetDebit(accepted=False, budget_remaining_paise=remaining)
             if code in TRANSIENT_ERROR_CODES:
                 raise WriteConflict(code) from error

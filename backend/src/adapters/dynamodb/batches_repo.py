@@ -67,7 +67,11 @@ class BatchesRepository:
             {**meta_to_dict(meta), "sk": META_SK, "entity_type": BATCH_ENTITY_TYPE}
         ]
         rows.extend(
-            {"batch_id": meta.batch_id, "sk": entitlement_sort_key(entitlement), **entitlement.to_dict()}
+            {
+                "batch_id": meta.batch_id,
+                "sk": entitlement_sort_key(entitlement),
+                **entitlement.to_dict(),
+            }
             for entitlement in entitlements
         )
         for start in range(0, len(rows), BATCH_WRITE_LIMIT):

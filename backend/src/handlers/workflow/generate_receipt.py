@@ -9,7 +9,6 @@ from typing import Any
 
 from common.logging import get_logger
 from domain.validation import require_str
-
 from services.container import workflow_service
 
 logger = get_logger("workflow")

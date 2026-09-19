@@ -11,29 +11,38 @@ HEADER = "beneficiary_id,display_name,amount_paise,installment"
 
 
 def test_valid_csv_is_parsed() -> None:
-    report = parse_entitlements_csv(f"{HEADER}\nSTU-001,Aarav Iyer,1000000,1\nSTU-001,Aarav Iyer,1000000,2\n")
+    report = parse_entitlements_csv(
+        f"{HEADER}\nSTU-001,Aarav Iyer,1000000,1\nSTU-001,Aarav Iyer,1000000,2\n"
+    )
     assert report.is_valid
-    assert [(e.beneficiary_id, e.installment) for e in report.entitlements] == [("STU-001", 1), ("STU-001", 2)]
+    assert [(e.beneficiary_id, e.installment) for e in report.entitlements] == [
+        ("STU-001", 1),
+        ("STU-001", 2),
+    ]
 
 
 def test_column_order_is_flexible_and_bom_is_tolerated() -> None:
-    report = parse_entitlements_csv("﻿installment,amount_paise,display_name,beneficiary_id\n1,500,Diya Das,STU-9\n")
+    report = parse_entitlements_csv(
+        "﻿installment,amount_paise,display_name,beneficiary_id\n1,500,Diya Das,STU-9\n"
+    )
     assert report.is_valid
     assert report.entitlements[0].amount_paise == 500
 
 
 def test_every_bad_row_is_reported_with_its_line_number() -> None:
-    text = "\n".join([
-        HEADER,
-        "STU-001,Aarav Iyer,1000000,1",
-        "STU#002,Bad Id,1000000,1",       # line 3: '#' is the key separator
-        "STU-003,,1000000,1",              # line 4: missing name
-        "STU-004,Neg Amount,-5,1",         # line 5: not a positive integer
-        "STU-005,Float Amount,100.50,1",   # line 6: paise must be whole
-        "STU-006,Zero Inst,100,0",         # line 7: installment >= 1
-        "STU-001,Aarav Iyer,1000000,1",    # line 8: duplicate of line 2
-        "STU-007,Too,Many,Cells,1",        # line 9: wrong cell count
-    ])
+    text = "\n".join(
+        [
+            HEADER,
+            "STU-001,Aarav Iyer,1000000,1",
+            "STU#002,Bad Id,1000000,1",  # line 3: '#' is the key separator
+            "STU-003,,1000000,1",  # line 4: missing name
+            "STU-004,Neg Amount,-5,1",  # line 5: not a positive integer
+            "STU-005,Float Amount,100.50,1",  # line 6: paise must be whole
+            "STU-006,Zero Inst,100,0",  # line 7: installment >= 1
+            "STU-001,Aarav Iyer,1000000,1",  # line 8: duplicate of line 2
+            "STU-007,Too,Many,Cells,1",  # line 9: wrong cell count
+        ]
+    )
     report = parse_entitlements_csv(text)
     assert not report.is_valid
     lines = sorted({error.line for error in report.errors if error.line is not None})
