@@ -1,5 +1,7 @@
 # DisburseProof
 
+[![CI](https://github.com/aadi-harale/disburseproof/actions/workflows/ci.yml/badge.svg)](https://github.com/aadi-harale/disburseproof/actions/workflows/ci.yml)
+
 **A reliability sandbox for benefit-disbursement pipelines.** Load a batch of synthetic scholarship beneficiaries, run a deterministic duplicate-delivery experiment against a disbursement processor on real AWS infrastructure, and get an evidence-backed verdict on whether every eligible student was paid **exactly once**.
 
 > Retries delivered 12 payment events twice. The vulnerable processor paid those 12 students twice, and because the budget is fixed, **12 other eligible students received ₹0**. The protected processor, on the identical workload, paid all 100 exactly once.
