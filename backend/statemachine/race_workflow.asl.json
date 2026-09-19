@@ -1,11 +1,11 @@
 {
-  "Comment": "DisburseProof Race Lab: release N copies of one payment at once by invoking the worker directly (Map, MaxConcurrency 20). Throttled invocations retry with jittered backoff.",
+  "Comment": "DisburseProof Race Lab: release N copies of one payment by invoking the worker directly. MaxConcurrency 6 because this account has a Lambda concurrency quota of 10: more would throttle the API and workflow functions (observed: a 503 on GET /races during a 20-way race). Throttled invocations retry with jittered backoff.",
   "StartAt": "RaceCopies",
   "States": {
     "RaceCopies": {
       "Type": "Map",
       "ItemsPath": "$.deliveries",
-      "MaxConcurrency": 20,
+      "MaxConcurrency": 6,
       "ItemProcessor": {
         "ProcessorConfig": { "Mode": "INLINE" },
         "StartAt": "InvokeWorker",

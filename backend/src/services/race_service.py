@@ -6,9 +6,9 @@ once per copy, all for the same entitlement) and reading its lanes back.
 The naive processor checks the idempotency record and writes it later, with an
 injected 200 ms race window in between, so overlapping copies can all see "not
 paid" and all pay. The protected processor claims the key in the same
-transaction as the payment, so exactly one copy can ever pay. How many naive
-copies overlap depends on timing and on the account's Lambda concurrency quota,
-so the naive result can vary between attempts; the UI says so.
+transaction as the payment, so exactly one copy can ever pay. The Map runs at
+most 6 copies at once (the account's Lambda concurrency quota is 10 and the API
+needs headroom), so how many naive copies overlap varies; the UI says so.
 
 Must never: be counted as an experiment run. Races are stored with a separate
 entity type and never appear in the runs list or the comparison.

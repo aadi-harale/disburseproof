@@ -92,8 +92,8 @@ export function RaceLabPage() {
           {start.error && <ErrorState error={start.error} compact />}
           <p className="text-[12px] leading-relaxed text-faint">
             Honest caveats: the naive result varies between attempts, because only copies that overlap inside
-            the race window pay twice. This account&apos;s Lambda concurrency quota is 10, so not every copy
-            runs at once; throttled copies retry a moment later and are usually suppressed.
+            the race window pay twice. Copies run six at a time because this account&apos;s Lambda concurrency
+            quota is 10 and the API needs headroom; later waves usually find the payment already claimed.
           </p>
         </div>
 

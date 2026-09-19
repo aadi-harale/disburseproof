@@ -410,10 +410,9 @@ Resources:
         - LambdaInvokePolicy: { FunctionName: !Ref MarkFailedFunction }
 
   # ---------------------------------------------------------------------------
-  # Race Lab: a Map state releases N copies of one payment at once by invoking
-  # the worker directly (no SQS), so the naive processor's check-then-write race
-  # can be seen. Throttled invocations retry with backoff (the account's Lambda
-  # concurrency quota caps how many copies truly overlap).
+  # Race Lab: a Map state releases N copies of one payment by invoking the worker
+  # directly (no SQS), so the naive processor's check-then-write race can be seen.
+  # MaxConcurrency 6 leaves headroom in a 10-execution account concurrency quota.
   # ---------------------------------------------------------------------------
   FinishRaceFunction:
     Type: AWS::Serverless::Function

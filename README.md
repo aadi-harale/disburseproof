@@ -149,13 +149,39 @@ Delivery IDs are `uuid5(run_id, phase, logical_event_id, copy)` rather than rand
 - The **receipt** is canonical JSON in S3. Its SHA-256 is stored on the run; the API re-hashes the S3 object, and the receipt page re-hashes the downloaded bytes in the browser with Web Crypto.
 - The **AWS evidence drawer** reads the Step Functions execution history, SQS queue depths and the run's CloudWatch log lines live.
 
+### Race Lab: check-then-write, live
+
+The Race Lab (`/race`) releases up to 20 copies of **one** payment: a Step Functions Map state invokes the worker Lambda directly, once per copy, six at a time. The naive processor reads the idempotency record, waits an injected 200 ms race window, then pays and writes the record, so copies that overlap all see "not paid" and all pay. The protected processor claims the key in the same transaction as the payment, so exactly one copy can commit. The naive count varies between attempts: only copies that overlap inside the window double-pay. The Map runs at most 6 copies at once because this account's Lambda concurrency quota is 10; a 20-way burst throttled the API during testing. On AWS, 20 naive copies made 6 payments for one entitlement (the whole first wave of six) in two attempts out of two; 20 protected copies made exactly 1.
+
+## Security and threat model
+
+The repository is public, the site has no login, and it runs in a personal AWS account. The goals: nothing sensitive leaks, strangers cannot run up the bill or break the demo, and every decision is deliberate and documented. Full detail: [SECURITY.md](SECURITY.md), the [audit](docs/security/audit-2026-09-19.md) and [ADR 0005](docs/adr/0005-public-demo-without-auth.md).
+
+| Asset | Threat | Control | Residual risk |
+|---|---|---|---|
+| AWS account and credentials | Leaked keys in the public repo | No secrets are needed (per-function IAM roles); only the public API URL reaches the browser; gitleaks scans every commit on every branch in CI | Low: history was scanned clean before publishing |
+| The bill | Public API abuse | Stage throttling 10 rps / burst 20; atomic hourly cost guards (30 runs, 30 races, 20 batches, 60 experiments → 429); ≤ 3 concurrent runs and 1 race (409); 256 KB bodies, ≤ 500 CSV rows; budget alerts | Coarse global limits, not per-user fairness |
+| Data | Exposure of receipts or records | All data synthetic; receipts bucket private (Block Public Access, TLS-only policy, SSE-S3, versioning) and served only as API JSON; PITR on data tables | Account ID visible in ARNs in the evidence drawer (not a secret) |
+| Visitors | XSS, injection, clickjacking | React escaping only (`dangerouslySetInnerHTML`, `eval` banned by lint); strict CSP (`default-src 'self'`, `connect-src` = our API, `frame-ancestors 'none'`), HSTS, nosniff; strict request schemas; CSV names limited to letters, space, `.`, `'`, `-` (no formula prefixes) | None known |
+| The golden demo | Tampering or breaking it | No update or delete endpoints; batch IDs generated server-side; experiments content-addressed | A burst of visitors can exhaust the hour's run allowance |
+| Functions | Over-privilege | One role per function, SAM policy templates scoped to specific tables, queue, bucket and state machines; no `*` actions or admin policies; checkov in CI | `AWSLambdaBasicExecutionRole` (log writes) is resource-wide by AWS design |
+| Supply chain | Vulnerable or hijacked dependencies | Exact pins and lockfiles, Dependabot (pip, npm, actions), `pip-audit` and `npm audit` in CI, checksum-verified gitleaks | Transitive dev dependencies are not hash-locked |
+
+**Accepted risks**, stated plainly:
+
+- **No user authentication.** A single public demo operator; see ADR 0005 for why and what compensates.
+- **No WAF.** Cost and set-up time; throttling and the hourly guards cover cost abuse.
+- **Lambdas are not in a VPC**, so they could technically reach the internet. A NAT gateway would cost more than the project; the code makes no outbound calls beyond AWS APIs.
+- **The run counter is a coarse limiter**, not per-user fairness.
+- **No customer-managed KMS keys.** AWS-owned-key encryption at rest is on everywhere; the data is synthetic.
+
 ## Cost
 
-Everything is serverless and on-demand, so idle cost is near zero: no instances, no provisioned capacity, and 14-day log retention. One run is roughly 112 SQS messages, about a hundred Lambda invocations, around a thousand DynamoDB write request units (transactional writes cost double) and 30 to 60 Step Functions state transitions. That is a fraction of a US cent per run at ap-south-1 list prices. The main cost risk is a public, unauthenticated endpoint, so `POST /runs` refuses new runs while 2 are active, and the API is throttled to 10 requests per second.
+Everything is serverless and on-demand, so idle cost is near zero: no instances, no provisioned capacity, and 7-day log retention. One run is roughly 112 SQS messages, about a hundred Lambda invocations, around a thousand DynamoDB write request units (transactional writes cost double) and 30 to 60 Step Functions state transitions. That is a fraction of a US cent per run at ap-south-1 list prices. The main cost risk is a public, unauthenticated API, so writes are capped per hour (30 runs, 30 races, 20 batches, 60 experiments), at most 3 runs execute at once, and the API is throttled to 10 requests per second.
 
 ## Limitations
 
-- **No authentication.** A single demo operator; anyone with the URL can start runs (rate limited and capped at 2 concurrent runs).
+- **No authentication.** A single demo operator; anyone with the URL can start runs, within the hourly limits and 3 concurrent runs ([ADR 0005](docs/adr/0005-public-demo-without-auth.md)).
 - **Synthetic data only.** Do not upload real names or personal data through the CSV import.
 - **The Runs item is a deliberate hot key.** Every delivery updates the run's budget and counters, so workers contend for one item. That is fine at 5 concurrent workers and 500 entitlements, and is measured by the `TransactionConflictRetries` metric; it would not scale to production volumes, where the budget would be sharded or reserved per partition.
 - **Not tested against real payment providers.** The ledger is a DynamoDB table; there is no bank integration, reconciliation file or settlement.
@@ -200,9 +226,10 @@ The stack seeds the demo batch and experiment on deploy. Its outputs include `Ap
 ```bash
 cd backend
 pip install -r requirements-dev.txt
-ruff check . && ruff format --check . && mypy && pytest          # unit tests, no AWS needed
+ruff check . && ruff format --check . && mypy && pytest          # unit + security tests, no AWS needed
 python tests/integration/smoke_test.py --stack disburseproof-dev  # both processors on AWS, asserts the table above
 python tests/integration/concurrency_test.py --stack disburseproof-dev  # 20 parallel copies, exactly one payment
+python tests/integration/security_smoke.py --stack disburseproof-dev    # CORS, headers, private S3, 400s, throttling, no Function URLs
 ```
 
 ```bash
@@ -210,7 +237,7 @@ cd frontend
 npm ci && npm run lint && npm run typecheck && npm run build
 ```
 
-GitHub Actions runs ruff, mypy, pytest, `sam validate --lint`, and the frontend lint, typecheck and build on every push.
+GitHub Actions runs ruff, mypy, pytest (unit and security tests), `pip-audit`, `sam validate --lint`, checkov, gitleaks over the full history, and the frontend lint, typecheck, build and `npm audit` on every push.
 
 ## What I learned
 
