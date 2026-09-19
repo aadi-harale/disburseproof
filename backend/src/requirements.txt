@@ -1,0 +1,3 @@
+# Runtime dependencies bundled into every Lambda by `sam build`.
+# boto3 is provided by the Lambda Python 3.12 runtime and is deliberately not pinned here.
+aws-lambda-powertools>=3.0,<4
