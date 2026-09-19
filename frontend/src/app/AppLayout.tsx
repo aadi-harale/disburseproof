@@ -14,6 +14,7 @@ const NAV = [
   { to: "/runs", label: "Runs", end: false },
   { to: "/compare", label: "Compare", end: false },
   { to: "/batches", label: "Batches", end: false },
+  { to: "/race", label: "Race Lab", end: false },
 ];
 
 export function AppLayout() {

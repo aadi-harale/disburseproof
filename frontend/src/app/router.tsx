@@ -4,6 +4,7 @@ import { BatchDetailPage } from "../features/batches/BatchDetailPage";
 import { BatchesPage } from "../features/batches/BatchesPage";
 import { ComparePage } from "../features/compare/ComparePage";
 import { OverviewPage } from "../features/overview/OverviewPage";
+import { RaceLabPage } from "../features/race/RaceLabPage";
 import { ReceiptPage } from "../features/receipts/ReceiptPage";
 import { RunPage } from "../features/runs/RunPage";
 import { RunsHistoryPage } from "../features/runs/RunsHistoryPage";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "/runs/:runId/receipt", element: <ReceiptPage /> },
       { path: "/compare", element: <ComparePage /> },
       { path: "/batches", element: <BatchesPage /> },
+      { path: "/race", element: <RaceLabPage /> },
       { path: "/batches/:batchId", element: <BatchDetailPage /> },
       { path: "*", element: <RouteError /> },
     ],

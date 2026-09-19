@@ -13,6 +13,8 @@ import type {
   FieldError,
   Overview,
   Processor,
+  Race,
+  RaceDetail,
   ReceiptResponse,
   Run,
   StudentDetail,
@@ -90,13 +92,15 @@ async function request<T>(path: string, init?: { method?: "GET" | "POST"; body?:
   }
 
   if (!response.ok) {
-    if (response.status === 429) {
-      noteRateLimited();
-      throw new ApiError(429, "RATE_LIMITED", "The public API is rate limited. Retrying shortly.");
-    }
     const error = (
       body as { error?: { code?: string; message?: string; request_id?: string; details?: FieldError[] } }
     )?.error;
+    if (response.status === 429 && !error) {
+      // API Gateway stage throttling (no JSON error body). Our own hourly cost guard
+      // also returns 429, but with an error body whose message is shown as is.
+      noteRateLimited();
+      throw new ApiError(429, "THROTTLED", "The public API is rate limited. Retrying shortly.");
+    }
     throw new ApiError(
       response.status,
       error?.code ?? `HTTP_${response.status}`,
@@ -131,6 +135,11 @@ export const api = {
     request<{ preview: CsvPreview }>("/batches", { method: "POST", body: { csv, dry_run: true } }),
   uploadCsv: (body: { name?: string; csv: string }) =>
     request<{ batch: Batch }>("/batches", { method: "POST", body }),
+
+  startRace: (processor: "naive" | "protected", copies: number) =>
+    request<{ race: Race }>("/race", { method: "POST", body: { processor, copies } }),
+  listRaces: () => request<{ items: Race[] }>("/races"),
+  getRace: (runId: string) => request<RaceDetail>(`/races/${encode(runId)}`),
 
   getExperiment: (experimentId: string) => request<ExperimentDetail>(`/experiments/${encode(experimentId)}`),
   createExperiment: (body: { batch_id: string; seed: string; duplicate_count: number }) =>

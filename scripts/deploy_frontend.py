@@ -6,7 +6,9 @@ Usage (after `sam deploy`):
 Steps:
   1. Read ApiUrl and AmplifyAppId from the CloudFormation stack outputs.
   2. `npm ci` and `npm run build` in frontend/ with VITE_API_URL set to ApiUrl.
-  3. Zip frontend/dist and publish it as a manual Amplify deployment
+  3. Render security headers (CSP with the exact API origin, HSTS, ...) into
+     dist/customHttp.yml, which Amplify applies to manual deployments.
+  4. Zip frontend/dist and publish it as a manual Amplify deployment
      (create-deployment -> upload the zip -> start-deployment), then wait for it.
 
 Uses your normal AWS credentials (profile or environment). Nothing is stored.
@@ -20,6 +22,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -44,10 +47,29 @@ def build(api_url: str) -> None:
         subprocess.run(args, cwd=FRONTEND, env=env, check=True)
 
 
+def write_security_headers(api_url: str) -> None:
+    """Render frontend/security-headers.yml into dist/customHttp.yml with the API origin.
+
+    Amplify applies customHttp.yml from the root of a manual deployment. The CSP's
+    connect-src must name the exact API origin, which only exists after sam deploy.
+    """
+    parsed = urllib.parse.urlsplit(api_url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise SystemExit(f"Refusing to build a CSP for a non-HTTPS API URL: {api_url}")
+    origin = f"https://{parsed.hostname}"
+    template = (FRONTEND / "security-headers.yml").read_text(encoding="utf-8")
+    if "__API_ORIGIN__" not in template:
+        raise SystemExit("security-headers.yml has no __API_ORIGIN__ placeholder")
+    (FRONTEND / "dist" / "customHttp.yml").write_text(template.replace("__API_ORIGIN__", origin), encoding="utf-8")
+    print(f"Security headers written (connect-src 'self' {origin})")
+
+
 def zip_dist() -> bytes:
     dist = FRONTEND / "dist"
     if not (dist / "index.html").exists():
         raise SystemExit("frontend/dist/index.html not found; build the frontend first")
+    if not (dist / "customHttp.yml").exists():
+        raise SystemExit("dist/customHttp.yml missing: security headers were not rendered")
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(dist.rglob("*")):
@@ -90,6 +112,7 @@ def main() -> int:
     outputs = stack_outputs(args.stack, args.region)
     if not args.skip_build:
         build(outputs["ApiUrl"])
+    write_security_headers(outputs["ApiUrl"])
     payload = zip_dist()
     print(f"Publishing {len(payload) / 1024:.0f} KB to Amplify app {outputs['AmplifyAppId']}")
     publish(outputs["AmplifyAppId"], args.region, payload)

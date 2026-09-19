@@ -5,7 +5,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError } from "./client";
-import type { Processor, Run } from "./types";
+import type { Processor, Race, Run } from "./types";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +29,8 @@ export const keys = {
   batches: ["batches"] as const,
   batch: (batchId: string) => ["batch", batchId] as const,
   experiment: (experimentId: string) => ["experiment", experimentId] as const,
+  races: ["races"] as const,
+  race: (runId: string) => ["race", runId] as const,
 };
 
 export function useOverview() {
@@ -124,5 +126,30 @@ export function useStartRun() {
       void client.invalidateQueries({ queryKey: keys.overview });
       void client.invalidateQueries({ queryKey: keys.runs });
     },
+  });
+}
+
+export function useRaces() {
+  return useQuery({
+    queryKey: keys.races,
+    queryFn: async () => (await api.listRaces()).items,
+    refetchInterval: 15000,
+  });
+}
+
+export function useRace(runId: string | undefined) {
+  return useQuery({
+    queryKey: keys.race(runId ?? ""),
+    queryFn: () => api.getRace(runId!),
+    enabled: Boolean(runId),
+    refetchInterval: (query) => (query.state.data?.race.is_terminal ? false : 1000),
+  });
+}
+
+export function useStartRace() {
+  const client = useQueryClient();
+  return useMutation<Race, ApiError, { processor: "naive" | "protected"; copies: number }>({
+    mutationFn: async ({ processor, copies }) => (await api.startRace(processor, copies)).race,
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.races }),
   });
 }

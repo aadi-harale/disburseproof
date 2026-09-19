@@ -303,3 +303,44 @@ export interface Evidence {
   log_groups: string[];
   logs: EvidenceLogLine[];
 }
+
+export interface RaceSummary {
+  copies: number;
+  recorded: number;
+  payments: number;
+  suppressed: number;
+  extra_payments: number;
+  overpaid_paise: number;
+}
+
+export interface Race {
+  run_id: string;
+  processor: "naive" | "protected";
+  copies: number;
+  race_window_ms: number;
+  amount_paise: number;
+  status: RunStatus;
+  phase: string;
+  created_at: string;
+  finished_at: string | null;
+  verdict: Verdict | null;
+  race: RaceSummary | null;
+  failure_reason: string | null;
+  failure_message: string | null;
+  is_terminal: boolean;
+  console_url: string | null;
+}
+
+export interface RaceLane {
+  copy_index: number;
+  outcome: DeliveryOutcome;
+  processed_at: string;
+  attempt: number;
+  lambda_request_id: string;
+}
+
+export interface RaceDetail {
+  race: Race;
+  lanes: RaceLane[];
+  payments_so_far: number;
+}

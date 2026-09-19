@@ -16,5 +16,18 @@ export default defineConfig([
       reactRefresh.configs.vite,
     ],
     languageOptions: { ecmaVersion: 2022, globals: globals.browser },
+    rules: {
+      // All API data is rendered as text through React escaping. Raw HTML injection is banned.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: "dangerouslySetInnerHTML is forbidden: render API data as text.",
+        },
+      ],
+      "no-eval": "error",
+      "no-implied-eval": "error",
+      "no-new-func": "error",
+    },
   },
 ]);
