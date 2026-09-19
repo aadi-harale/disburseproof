@@ -17,6 +17,7 @@ import { useDocumentTitle } from "../../lib/hooks";
 import { METRIC_ROWS } from "../runs/runFacts";
 import { StateLegend } from "../runs/StateLegend";
 import { StudentGrid } from "../runs/StudentGrid";
+import { VersusHeader } from "./VersusHeader";
 
 export function ComparePage() {
   useDocumentTitle("Compare runs");
@@ -58,6 +59,7 @@ export function ComparePage() {
             <RunPicker label="Run B" value={b} runs={completed} onChange={(id) => choose("b", id)} />
           </div>
 
+          {runA.data && runB.data && <VersusHeader a={runA.data} b={runB.data} />}
           {runA.data && runB.data && <FingerprintCheck a={runA.data} b={runB.data} />}
           {(runA.error || runB.error) && <ErrorState error={runA.error ?? runB.error} compact />}
 

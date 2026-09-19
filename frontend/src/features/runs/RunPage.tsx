@@ -21,8 +21,10 @@ import { InvariantList } from "./InvariantList";
 import { PhaseIndicator } from "./PhaseIndicator";
 import { RunCounters } from "./RunCounters";
 import { runStory } from "./runFacts";
+import { Scoreboard } from "./Scoreboard";
 import { StateLegend } from "./StateLegend";
 import { StudentGrid } from "./StudentGrid";
+import { VerdictBanner } from "./VerdictBanner";
 
 export function RunPage() {
   const { runId = "", beneficiaryId } = useParams();
@@ -74,7 +76,6 @@ export function RunPage() {
   if (runQuery.error) return <ErrorState error={runQuery.error} onRetry={() => runQuery.refetch()} />;
   if (!run) return <RunPageSkeleton />;
 
-  const story = runStory(run);
   return (
     <>
       <PageHeader
@@ -113,19 +114,7 @@ export function RunPage() {
       />
 
       {run.status === "FAILED" && <FailureBanner run={run} />}
-      {story && (
-        <div
-          className={`mb-5 rounded-xl border px-4 py-3 sm:px-5 ${
-            run.verdict === "PASS" ? "border-paid/30 bg-paid-soft" : "border-unpaid/30 bg-unpaid-soft"
-          }`}
-        >
-          <p
-            className={`text-[15px] font-medium ${run.verdict === "PASS" ? "text-paid-text" : "text-unpaid-text"}`}
-          >
-            {story}
-          </p>
-        </div>
-      )}
+      <VerdictBanner run={run} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
         <Card>
@@ -139,6 +128,7 @@ export function RunPage() {
             actions={<StudentSearch onFind={openStudent} />}
           />
           <CardBody className="space-y-4">
+            <Scoreboard counts={students.data?.counts} total={run.logical_events} />
             <StudentGrid
               items={students.data?.items}
               expected={run.logical_events}
