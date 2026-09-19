@@ -1,0 +1,408 @@
+{
+  "Comment": "DisburseProof run: two-phase duplicate-delivery experiment. Phase B starts only after every Phase A delivery is recorded (docs/adr/0001-two-phase-injection.md).",
+  "StartAt": "InitRun",
+  "States": {
+    "InitRun": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${InitRunFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id"
+        }
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.init",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "InjectPhaseA"
+    },
+    "InjectPhaseA": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Retry wave: each duplicated logical event delivered twice (2D deliveries).",
+      "Parameters": {
+        "FunctionName": "${InjectPhaseFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "phase": "A"
+        }
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.inject_a",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "StartDrainA"
+    },
+    "StartDrainA": {
+      "Type": "Pass",
+      "Comment": "Reset the drain-loop counter for Phase A.",
+      "Result": {
+        "iteration": 0
+      },
+      "ResultPath": "$.drain",
+      "Next": "WaitDrainA"
+    },
+    "WaitDrainA": {
+      "Type": "Wait",
+      "Seconds": 2,
+      "Next": "CheckDrainA"
+    },
+    "CheckDrainA": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Reads the run's delivered_count (the only drain signal) plus approximate queue depths.",
+      "Parameters": {
+        "FunctionName": "${CheckDrainFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "phase": "A",
+          "iteration.$": "$.drain.iteration"
+        }
+      },
+      "ResultSelector": {
+        "phase.$": "$.Payload.phase",
+        "iteration.$": "$.Payload.iteration",
+        "delivered_count.$": "$.Payload.delivered_count",
+        "target.$": "$.Payload.target",
+        "drained.$": "$.Payload.drained",
+        "timed_out.$": "$.Payload.timed_out",
+        "dlq_visible.$": "$.Payload.dlq_visible"
+      },
+      "ResultPath": "$.drain",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "IsPhaseADrained"
+    },
+    "IsPhaseADrained": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.drain.drained",
+          "BooleanEquals": true,
+          "Next": "InjectPhaseB"
+        },
+        {
+          "Variable": "$.drain.timed_out",
+          "BooleanEquals": true,
+          "Next": "DrainTimedOut"
+        }
+      ],
+      "Default": "WaitDrainA"
+    },
+    "InjectPhaseB": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Every other logical event delivered once (N - D deliveries).",
+      "Parameters": {
+        "FunctionName": "${InjectPhaseFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "phase": "B"
+        }
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.inject_b",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "StartDrainB"
+    },
+    "StartDrainB": {
+      "Type": "Pass",
+      "Comment": "Reset the drain-loop counter for Phase B.",
+      "Result": {
+        "iteration": 0
+      },
+      "ResultPath": "$.drain",
+      "Next": "WaitDrainB"
+    },
+    "WaitDrainB": {
+      "Type": "Wait",
+      "Seconds": 2,
+      "Next": "CheckDrainB"
+    },
+    "CheckDrainB": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Reads the run's delivered_count (the only drain signal) plus approximate queue depths.",
+      "Parameters": {
+        "FunctionName": "${CheckDrainFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "phase": "B",
+          "iteration.$": "$.drain.iteration"
+        }
+      },
+      "ResultSelector": {
+        "phase.$": "$.Payload.phase",
+        "iteration.$": "$.Payload.iteration",
+        "delivered_count.$": "$.Payload.delivered_count",
+        "target.$": "$.Payload.target",
+        "drained.$": "$.Payload.drained",
+        "timed_out.$": "$.Payload.timed_out",
+        "dlq_visible.$": "$.Payload.dlq_visible"
+      },
+      "ResultPath": "$.drain",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "IsPhaseBDrained"
+    },
+    "IsPhaseBDrained": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.drain.drained",
+          "BooleanEquals": true,
+          "Next": "Evaluate"
+        },
+        {
+          "Variable": "$.drain.timed_out",
+          "BooleanEquals": true,
+          "Next": "DrainTimedOut"
+        }
+      ],
+      "Default": "WaitDrainB"
+    },
+    "DrainTimedOut": {
+      "Type": "Pass",
+      "Parameters": {
+        "Error": "DRAIN_TIMEOUT",
+        "Cause.$": "States.Format('Phase {} did not drain after {} checks: {} of {} deliveries recorded; {} message(s) in the dead-letter queue.', $.drain.phase, $.drain.iteration, $.drain.delivered_count, $.drain.target, $.drain.dlq_visible)"
+      },
+      "ResultPath": "$.error",
+      "Next": "MarkFailed"
+    },
+    "Evaluate": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${EvaluateFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id"
+        }
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.evaluation",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "GenerateReceipt"
+    },
+    "GenerateReceipt": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${GenerateReceiptFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id"
+        }
+      },
+      "ResultSelector": {
+        "result.$": "$.Payload"
+      },
+      "ResultPath": "$.receipt",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "Complete"
+    },
+    "Complete": {
+      "Type": "Succeed"
+    },
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Catch-all: records the failure reason on the run so the UI can show it.",
+      "Parameters": {
+        "FunctionName": "${MarkFailedFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "error.$": "$.error"
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": null,
+          "Next": "RunFailed"
+        }
+      ],
+      "Next": "RunFailed"
+    },
+    "RunFailed": {
+      "Type": "Fail",
+      "Error": "RunFailed",
+      "Cause": "The run failed. See failure_reason and failure_message on the run record."
+    }
+  }
+}
