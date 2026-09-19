@@ -6,8 +6,8 @@
 
 > **Synthetic sandbox — no real money or personal data.** No bank APIs, no Aadhaar or other PII, and no claim about how PFMS, NSP or any government system is built. A PASS means *one business effect per entitlement under the tested replay*. It does not mean "exactly-once delivery", and it does not prove anything about future executions.
 
-- **Live app:** _added after deployment_
-- **API:** _added after deployment_
+- **Live app:** https://main.d194gkph6yfxxv.amplifyapp.com
+- **API:** https://5f1ru6pgai.execute-api.ap-south-1.amazonaws.com (try `GET /overview`)
 
 ## The problem
 
@@ -34,6 +34,36 @@ Batch: 100 students × ₹10,000, budget ₹10,00,000. Experiment: seed `FC-2026
 | Verdict | **FAIL** | **PASS** |
 
 These are the values the smoke test asserts. The app hard-codes none of them: every number is computed from DynamoDB after the run.
+
+**Observed on AWS** (`python tests/integration/smoke_test.py --stack disburseproof-dev`, ap-south-1, 19 Sep 2026):
+
+```
+Metric                            Vulnerable                            Protected
+deliveries                        112                                   112
+ledger_effects                    100                                   100
+double_paid                       12                                    0
+unpaid                            12                                    0
+duplicates_suppressed             0                                     12
+budget_exhausted                  12                                    0
+misallocated_paise                12000000                              0
+budget_guard                      PASS                                  PASS
+one_payment_per_entitlement       FAIL                                  PASS
+every_eligible_paid               FAIL                                  PASS
+every_eligible_paid_detail        88/100 eligible entitlements paid     100/100 eligible entitlements paid
+verdict                           FAIL                                  PASS
+vulnerable: run run_01M2W96E2MKW8SPSWC1DRBJVQR  duration 10110 ms  receipt sha256 e9b413ada96d56d9…
+protected: run run_01M2W96YFSERESJHW49KRKB53C  duration 5072 ms  receipt sha256 60fe452658f28ff4…
+
+SMOKE TEST PASSED: every value matches the headline table.
+```
+
+And the protected path under real contention (`concurrency_test.py`: 20 parallel worker invocations, one entitlement):
+
+```
+Outcomes: {'DUPLICATE_SUPPRESSED': 19, 'COMMITTED': 1}
+Ledger effects: 1   budget debited: 1000000 paise   claim present: True
+CONCURRENCY TEST PASSED
+```
 
 ## What is synthetic and what is real
 
@@ -182,7 +212,12 @@ GitHub Actions runs ruff, mypy, pytest, `sam validate --lint`, and the frontend 
 
 ## What I learned
 
-_Written after deployment._
+- **Delivery is not the unit of correctness; the business effect is.** Deduplicating on the delivery or message ID feels safe and is not: a retry arrives as a new delivery. The key has to be the entitlement.
+- **Atomicity beats cleverness.** Putting the claim, the budget debit, the payment and the delivery record in one `TransactWriteItems` removed a whole class of crash windows that no amount of careful ordering could close.
+- **Cancellation reasons need an order.** A redelivered message fails the delivery condition *and* the idempotency condition; checking them in the wrong order would have recorded a redelivery as a new duplicate.
+- **A hot key is visible in real logs.** The live runs show `"attempt": 2` on some deliveries: DynamoDB really does cancel concurrent transactions on the shared Runs item, and bounded jittered retries absorb it.
+- **Determinism is designed, not hoped for.** SQS Standard does not preserve order, so the two-phase injection is what makes "12 students received ₹0" a repeatable result rather than a range, and deterministic delivery IDs keep a retried injection from inflating it.
+- **Small things break demos.** A curly brace in a YAML flow mapping (`/runs/{run_id}`), a monospace font without a ₹ glyph, and a stale PATH in an old terminal each cost time; checking the font files and validating the template locally found them before judges did.
 
 ## License
 

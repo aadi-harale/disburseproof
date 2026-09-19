@@ -68,9 +68,12 @@ function Header() {
           ))}
         </nav>
         {region && (
-          <Badge tone="muted" className="hidden md:inline-flex">
-            <span className="size-1.5 rounded-full bg-paid" aria-hidden /> AWS · {region}
-          </Badge>
+          // Wrapped: the badge sets its own display, which would override "hidden".
+          <span className="hidden md:block">
+            <Badge tone="muted">
+              <span className="size-1.5 rounded-full bg-paid" aria-hidden /> AWS · {region}
+            </Badge>
+          </span>
         )}
         <button
           type="button"
