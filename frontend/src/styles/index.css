@@ -16,7 +16,7 @@
   --border-strong: #cfcfc8;
   --text: #17171a;
   --muted: #5c5c66;
-  --faint: #8a8a94;
+  --faint: #6e6e78;
   --accent: #3730a3;
   --accent-hover: #2e2890;
   --accent-soft: #ecebfb;
@@ -48,7 +48,7 @@
   --border-strong: #3a3e48;
   --text: #e9eaee;
   --muted: #a1a5b0;
-  --faint: #7b808c;
+  --faint: #868b98;
   --accent: #6366f1;
   --accent-hover: #7577f4;
   --accent-soft: #23244a;
@@ -239,7 +239,7 @@
   --border: rgb(255 255 255 / 0.09);
   --border-strong: rgb(255 255 255 / 0.2);
   --muted: #a3a8b6;
-  --faint: #767c8b;
+  --faint: #878d9d;
   --surface: rgb(255 255 255 / 0.04);
   --surface-2: rgb(255 255 255 / 0.07);
   --text: #eceef3;
@@ -250,6 +250,12 @@
   --paid: #34b36c;
   --twice: #f0b04e;
   --unpaid: #e8595a;
+  --paid-soft: rgb(52 179 108 / 0.16);
+  --twice-soft: rgb(240 176 78 / 0.16);
+  --unpaid-soft: rgb(232 89 90 / 0.16);
+  --paid-text: #7fd9a3;
+  --twice-text: #f3c77e;
+  --unpaid-text: #f59a9a;
 }
 .stage::before {
   content: "";
@@ -311,8 +317,12 @@
 /* Quiet cards: a translucent surface and a softer border than a plain panel.
    Static containers only — never the tile grid, so replay stays smooth. */
 .card-quiet {
-  border: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
-  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.stage .card-quiet {
+  border-color: rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.055);
   backdrop-filter: blur(6px);
 }
 

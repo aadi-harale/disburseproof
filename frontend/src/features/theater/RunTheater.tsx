@@ -9,6 +9,7 @@ import { CHECK, CHECK_ORDER, TERMS } from "../../lib/labels";
 import { STATE_ORDER, STUDENT_STATES } from "../runs/studentStates";
 import { StudentGrid } from "../runs/StudentGrid";
 import { deriveTheater, inspect, type FeedLine, type TheaterState } from "./replay";
+import { VerificationPill } from "./VerificationPill";
 
 /**
  * The results view for any run: grid, budget, counters, feed and flow strip, then
@@ -477,35 +478,50 @@ export function Climax({
           </div>
         )}
       </div>
-      <ul className="card-quiet mt-6 divide-y divide-line rounded-xl">
+      <VerificationPill run={run} />
+      <ul className="mt-3 flex flex-wrap gap-2">
         {CHECK_ORDER.map((id) => {
           const invariant = run.invariants?.find((item) => item.id === id);
           if (!invariant) return null;
           const ok = invariant.result === "PASS";
-          const detail =
-            id === "every_eligible_paid"
-              ? `${formatCount(eligible - s.unpaid)}/${formatCount(eligible)} eligible students paid`
-              : id === "budget_guard" && ok && !pass
-                ? "The budget never overspent — the damage was who got the money."
-                : invariant.detail;
+          const figure =
+            id === "one_payment_per_entitlement"
+              ? `${formatCount(s.double_paid)} paid twice`
+              : id === "every_eligible_paid"
+                ? `${formatCount(eligible - s.unpaid)}/${formatCount(eligible)}`
+                : `${formatINR(s.spent_paise)} of ${formatINR(s.budget_paise)}`;
           return (
-            <li key={id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+            <li
+              key={id}
+              title={`${invariant.title}: ${invariant.detail}`}
+              className={cx(
+                "card-quiet flex items-center gap-2 rounded-xl px-3 py-2",
+                ok ? "border-paid/40" : "border-unpaid/40",
+              )}
+            >
               <span
                 className={cx(
-                  "figures inline-flex w-[72px] items-center justify-center gap-1 rounded-md py-1 text-[14px] font-bold tracking-wide text-white",
+                  "figures inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] font-bold text-white",
                   ok ? "bg-paid" : "bg-unpaid",
                 )}
               >
-                <Icon name={ok ? "check" : "close"} size={14} strokeWidth={2.6} />
+                <Icon name={ok ? "check" : "close"} size={12} strokeWidth={2.6} />
                 {invariant.result}
               </span>
-              <span className="text-[17px] font-semibold">{CHECK[id]?.primary ?? invariant.title}</span>
-              <span className="text-[12px] text-faint">{CHECK[id]?.technical}</span>
-              <span className="w-full text-[14px] text-muted sm:ml-auto sm:w-auto">{detail}</span>
+              <span className="text-[15px] font-semibold">{CHECK[id]?.primary ?? invariant.title}</span>
+              <span className="figures text-[14px] text-muted">· {figure}</span>
+              <span className="text-[11.5px] text-faint">{CHECK[id]?.technical}</span>
             </li>
           );
         })}
       </ul>
+      {!pass && (
+        <p className="mt-2 text-[14px] text-muted">
+          {run.invariants?.find((item) => item.id === "budget_guard")?.result === "PASS"
+            ? "The budget never overspent — the damage was who got the money."
+            : ""}
+        </p>
+      )}
     </section>
   );
 }
