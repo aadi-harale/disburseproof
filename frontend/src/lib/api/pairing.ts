@@ -44,3 +44,19 @@ export function useGoldenPair(): RunPair {
     error: overview.error ?? runs.error,
   };
 }
+
+/** The latest completed run of the same test by the other processor, if there is one. */
+export function useSiblingRun(run: Run | undefined): Run | null {
+  const runs = useRuns();
+  if (!run) return null;
+  return (
+    (runs.data ?? []).find(
+      (other) =>
+        other.run_id !== run.run_id &&
+        other.experiment_id === run.experiment_id &&
+        other.fingerprint === run.fingerprint &&
+        other.processor !== run.processor &&
+        evaluated(other),
+    ) ?? null
+  );
+}

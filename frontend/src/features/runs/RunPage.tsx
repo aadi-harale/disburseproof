@@ -11,6 +11,7 @@ import { Icon } from "../../components/ui/Icon";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { RunOutcomeBadge } from "../../components/ui/VerdictBadge";
+import { useSiblingRun } from "../../lib/api/pairing";
 import { useRun, useStudents } from "../../lib/api/queries";
 import type { StudentTile } from "../../lib/api/types";
 import { formatDateTime, formatDuration, shortRunId } from "../../lib/format";
@@ -29,6 +30,7 @@ export function RunPage() {
   const run = runQuery.data;
   const live = run ? !run.is_terminal : true;
   const students = useStudents(runId, live);
+  const sibling = useSiblingRun(run);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
 
   useDocumentTitle(run ? `${processorName(run.processor)} run ${run.run_id.slice(-6)}` : "Run");
@@ -155,7 +157,13 @@ export function RunPage() {
         </Card>
       </div>
 
-      <StudentDrawer runId={runId} beneficiaryId={beneficiaryId} live={live} onClose={closeStudent} />
+      <StudentDrawer
+        runId={runId}
+        beneficiaryId={beneficiaryId}
+        live={live}
+        onClose={closeStudent}
+        otherRunId={sibling?.run_id}
+      />
       <EvidenceDrawer runId={runId} open={evidenceOpen} onClose={closeEvidence} />
     </>
   );
