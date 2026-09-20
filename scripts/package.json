@@ -1,0 +1,13 @@
+{
+  "name": "disburseproof-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Browser checks and demo screenshots for the deployed site (scripts/ui_check.mjs).",
+  "scripts": {
+    "check": "node ui_check.mjs --mode check",
+    "shots": "node ui_check.mjs --mode shots"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}
