@@ -136,10 +136,10 @@ function ProcessorToggle({
   const p = protectedRun.summary;
   const badge = showingUnprotected
     ? u
-      ? `${formatCount(u.double_paid)} paid twice · ${formatCount(u.unpaid)} got ₹0`
+      ? `Final state: ${formatCount(u.double_paid)} paid twice · ${formatCount(u.unpaid)} got ₹0`
       : ""
     : p
-      ? `${formatCount(p.duplicates_suppressed)} repeat instructions refused · DynamoDB TransactWriteItems`
+      ? `Final state: ${formatCount(p.duplicates_suppressed)} repeat instructions refused · DynamoDB TransactWriteItems`
       : "";
   const option = (label: string, glyph: string, active: boolean, next: boolean, tone: string) => (
     <button
