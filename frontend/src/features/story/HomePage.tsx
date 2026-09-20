@@ -117,6 +117,7 @@ export function HomePage() {
           experiment={experiment}
           loading={pair.loading}
           playToken={proveToken}
+          alternateRunId={pair.matched ? (pair.unprotected?.run_id ?? undefined) : undefined}
           verifiedSubline={pair.matched ? "Same test. Correct outcome." : undefined}
           after={(run) => <ProveActions run={run} pair={pair} />}
         />
@@ -480,6 +481,7 @@ function StorySection({
   experiment,
   loading,
   playToken,
+  alternateRunId,
   verifiedSubline,
   after,
 }: {
@@ -492,6 +494,7 @@ function StorySection({
   experiment: Experiment | null;
   loading: boolean;
   playToken: number;
+  alternateRunId?: string;
   verifiedSubline?: string;
   after?: (run: Run) => ReactNode;
 }) {
@@ -610,6 +613,7 @@ function StorySection({
           toolbar={toggle}
           initial={liveRunId ? "final" : "empty"}
           playToken={playToken + token}
+          alternateRunId={liveRunId ? undefined : alternateRunId}
           autoplayOnView={!liveRunId}
           scrollOnClimax
           toastOnFinish={Boolean(liveRunId)}

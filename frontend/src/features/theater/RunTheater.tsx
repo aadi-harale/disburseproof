@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { cx } from "../../components/ui/cx";
 import { Icon } from "../../components/ui/Icon";
@@ -24,6 +24,7 @@ export function RunTheater({
   complete,
   view = "grid",
   viewToggle,
+  alternate,
   onSelect,
   verifiedSubline,
   showInspector = true,
@@ -37,29 +38,56 @@ export function RunTheater({
   complete: boolean;
   view?: "grid" | "list";
   viewToggle?: ReactNode;
+  /** The other recorded run of the same test: its final states can be shown on this grid. */
+  alternate?: { run: Run; tiles: StudentTile[] | undefined };
   onSelect?: (beneficiaryId: string) => void;
   verifiedSubline?: string;
   showInspector?: boolean;
   climaxRef?: React.Ref<HTMLDivElement>;
 }) {
+  const [showAlternate, setShowAlternate] = useState(false);
+  const [toggled, setToggled] = useState(false);
+  const paired = alternate && alternate.run.fingerprint === run.fingerprint ? alternate : null;
+  const shownRun = paired && showAlternate ? paired.run : run;
   const ready = entitlements && deliveries;
   const state = ready ? deriveTheater(entitlements, deliveries, cursor) : null;
   // Once everything is shown, the tiles are the backend's evaluated states.
-  const tiles = complete && run.verdict && entitlements ? entitlements : state?.tiles;
-  const counts = complete && run.verdict && entitlements ? countStates(entitlements) : state?.counts;
+  const own = complete && run.verdict && entitlements ? entitlements : state?.tiles;
+  const tiles = paired && showAlternate ? paired.tiles : own;
+  const counts = tiles ? countStates(tiles) : undefined;
 
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-7">
         <div className="min-w-0">
-          <StudentGrid
-            items={tiles}
-            expected={run.logical_events}
-            size="lg"
-            view={view}
-            onSelect={onSelect}
-            label={`${formatCount(run.logical_events)} students`}
-          />
+          {paired && (
+            <ProcessorToggle
+              showAlternate={showAlternate}
+              onChange={(next) => {
+                setToggled(true);
+                setShowAlternate(next);
+              }}
+              current={run}
+              other={paired.run}
+            />
+          )}
+          <div
+            className={cx(
+              "rounded-xl",
+              paired && showAlternate && shownRun.verdict === "FAIL" && "glow-verdict-fail",
+              paired && !showAlternate && shownRun.verdict === "PASS" && "glow-verdict-pass",
+            )}
+          >
+            <StudentGrid
+              items={tiles}
+              expected={run.logical_events}
+              size="lg"
+              view={view}
+              crossfade={Boolean(paired) && toggled}
+              onSelect={showAlternate ? undefined : onSelect}
+              label={`${formatCount(run.logical_events)} students`}
+            />
+          </div>
           <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
             <Legend counts={counts} />
             {viewToggle}
@@ -82,6 +110,77 @@ export function RunTheater({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Switches the same grid between the final states of the two recorded runs of one
+ * test. Both badges are that run's own evaluated numbers.
+ */
+function ProcessorToggle({
+  showAlternate,
+  onChange,
+  current,
+  other,
+}: {
+  showAlternate: boolean;
+  onChange: (showAlternate: boolean) => void;
+  current: Run;
+  other: Run;
+}) {
+  const unprotected = current.processor === "protected" ? other : current;
+  const protectedRun = current.processor === "protected" ? current : other;
+  const showingUnprotected = showAlternate === (other.processor === "vulnerable");
+  const u = unprotected.summary;
+  const p = protectedRun.summary;
+  const badge = showingUnprotected
+    ? u
+      ? `${formatCount(u.double_paid)} paid twice · ${formatCount(u.unpaid)} got ₹0`
+      : ""
+    : p
+      ? `${formatCount(p.duplicates_suppressed)} repeat instructions refused · DynamoDB TransactWriteItems`
+      : "";
+  const option = (label: string, glyph: string, active: boolean, next: boolean, tone: string) => (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onChange(next)}
+      className={cx(
+        "figures inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13.5px] font-medium",
+        active ? tone : "text-muted hover:text-ink",
+      )}
+    >
+      <span aria-hidden>{glyph}</span>
+      {label}
+    </button>
+  );
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div
+        role="group"
+        aria-label="Which processor's final state to show"
+        className="inline-flex items-center rounded-lg border border-line-strong p-0.5"
+      >
+        {option(
+          "Unprotected",
+          "✕",
+          showingUnprotected,
+          other.processor === "vulnerable",
+          "bg-unpaid-soft text-unpaid-text",
+        )}
+        <span className="px-1 text-faint" aria-hidden>
+          ⟷
+        </span>
+        {option(
+          "Protected",
+          "✓",
+          !showingUnprotected,
+          other.processor === "protected",
+          "bg-paid-soft text-paid-text",
+        )}
+      </div>
+      <p className={cx("text-[13.5px]", showingUnprotected ? "text-unpaid-text" : "text-muted")}>{badge}</p>
     </div>
   );
 }
