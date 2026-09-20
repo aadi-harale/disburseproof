@@ -25,6 +25,8 @@ export interface TheaterState {
   /** Payments (ledger effects) made so far. */
   payments: number;
   paidTwice: number;
+  /** Payments that were a second (or later) payment of the same entitlement. */
+  repeatPayments: number;
   unpaid: number;
   repeatsRefused: number;
   budgetRefusals: number;
@@ -37,7 +39,8 @@ export interface TheaterState {
   feed: FeedLine[];
 }
 
-export const FEED_LINES = 6;
+/** Kept in state; the feed shows the newest few and reveals the rest on demand. */
+export const FEED_LINES = 12;
 
 function tileState(commits: number, refused: boolean): StudentState {
   if (commits >= 2) return "paid_twice";
@@ -61,6 +64,7 @@ export function deriveTheater(
   const refused = new Set<string>();
   const lines: FeedLine[] = [];
   let payments = 0;
+  let repeatPayments = 0;
   let repeatsRefused = 0;
   let budgetRefusals = 0;
   let spentFirst = 0;
@@ -81,6 +85,7 @@ export function deriveTheater(
         spentFirst += amount;
         line = { tone: "paid", text: `${who(row)} paid ${formatINR(amount)}` };
       } else {
+        repeatPayments += 1;
         spentRepeat += amount;
         line = { tone: "twice", text: `${who(row)} paid again (repeat instruction)` };
       }
@@ -110,6 +115,7 @@ export function deriveTheater(
     arrived: upto,
     payments,
     paidTwice: counts.paid_twice,
+    repeatPayments,
     unpaid: counts.unpaid,
     repeatsRefused,
     budgetRefusals,

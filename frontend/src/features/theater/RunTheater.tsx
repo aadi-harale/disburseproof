@@ -115,43 +115,79 @@ function Legend({ counts }: { counts: Record<string, number> | undefined }) {
   );
 }
 
+/**
+ * The budget, and where it goes: green first payments, amber repeat payments (the
+ * leak), the rest remaining. Every figure is the replayed or live delivery rows.
+ */
 function BudgetBar({ run, state }: { run: Run; state: TheaterState | null }) {
   const budget = run.total_budget_paise;
   const first = state?.spentFirst ?? 0;
   const repeat = state?.spentRepeat ?? 0;
   const remaining = Math.max(0, budget - first - repeat);
   const pct = (value: number) => (budget > 0 ? `${(value / budget) * 100}%` : "0%");
+  const leaked = repeat > 0;
+  const refused = state?.repeatsRefused ?? 0;
+  const starved = state?.unpaid ?? 0;
   return (
-    <div>
+    <div className="card-quiet rounded-xl px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-[15px] font-medium">Synthetic scholarship budget</div>
         <div className="figures text-[13px] text-muted">{formatINR(budget)}</div>
       </div>
       <div
-        className="mt-2 flex h-4 overflow-hidden rounded-full bg-pending"
+        className="relative mt-2 h-4 overflow-hidden rounded-full bg-pending"
         role="img"
-        aria-label={`Budget: ${formatINR(first)} paid once, ${formatINR(repeat)} paid as repeats, ${formatINR(remaining)} left`}
+        aria-label={`Budget: ${formatINR(first)} in first payments, ${formatINR(repeat)} in repeat payments, ${formatINR(remaining)} left`}
       >
-        <div className="h-full bg-paid transition-[width] duration-300" style={{ width: pct(first) }} />
-        <div className="h-full bg-twice transition-[width] duration-300" style={{ width: pct(repeat) }} />
+        <div className="flex h-full">
+          <div className="h-full bg-paid transition-[width] duration-300" style={{ width: pct(first) }} />
+          <div className="h-full bg-twice transition-[width] duration-300" style={{ width: pct(repeat) }} />
+        </div>
+        {leaked && (
+          // Keyed by the number of repeat payments: a new one remounts this and replays the flash.
+          <span
+            key={state?.repeatPayments ?? 0}
+            className="leak-flash pointer-events-none absolute inset-0 bg-unpaid"
+            aria-hidden
+          />
+        )}
       </div>
-      <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-[13px]">
-        <span className="flex items-center gap-1.5 text-muted">
+      <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-[13px] text-muted">
+        <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-paid" aria-hidden /> First payments{" "}
           <span className="figures text-ink">{formatINR(first)}</span>
         </span>
-        {repeat > 0 && (
-          <span className="flex items-center gap-1.5 text-muted">
-            <span className="size-2.5 rounded-sm bg-twice" aria-hidden /> Repeat payments{" "}
-            <span className="figures text-twice">{formatINR(repeat)}</span>
-          </span>
-        )}
-        <span className="text-muted">
+        <span>
           Left{" "}
           <span className={cx("figures", remaining === 0 ? "text-unpaid" : "text-ink")}>
             {formatINR(remaining)}
           </span>
         </span>
+      </div>
+      <div className="mt-2 space-y-1 border-t border-line pt-2 text-[15px]" aria-live="polite">
+        {leaked ? (
+          <p className="text-twice">
+            Repeat payments: <span className="figures font-semibold">−{formatINR(repeat)}</span>{" "}
+            <span className="text-muted">
+              ({formatCount(state?.paidTwice ?? 0)} student{(state?.paidTwice ?? 0) === 1 ? "" : "s"} paid
+              twice)
+            </span>
+          </p>
+        ) : refused > 0 ? (
+          <p className="text-accent-text">
+            Repeats refused: <span className="figures font-semibold">{formatCount(refused)}</span>{" "}
+            <span className="text-muted">— {formatINR(0)} leaked</span>
+          </p>
+        ) : (
+          <p className="text-faint">No repeat payment yet.</p>
+        )}
+        {remaining === 0 && starved > 0 && (
+          <p className="text-unpaid">
+            Budget used up — <span className="figures font-semibold">{formatCount(starved)}</span> eligible
+            student
+            {starved === 1 ? "" : "s"} got ₹0
+          </p>
+        )}
       </div>
     </div>
   );
@@ -187,9 +223,12 @@ function Counters({ run, state }: { run: Run; state: TheaterState | null }) {
     });
   }
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
+    <dl className="grid grid-cols-2 gap-2">
       {items.map((item, index) => (
-        <div key={item.label} className={cx("bg-surface px-3.5 py-2", index === 4 && "col-span-2")}>
+        <div
+          key={item.label}
+          className={cx("card-quiet rounded-xl px-3.5 py-2", index === 4 && "col-span-2")}
+        >
           <dt className="text-[12.5px] text-muted">{item.label}</dt>
           <dd
             className={cx(
@@ -214,37 +253,59 @@ const FEED_STYLE: Record<FeedLine["tone"], { glyph: string; className: string }>
   unpaid: { glyph: "₹0", className: "text-unpaid" },
 };
 
+/** The newest few things the processor did, in words; the rest on demand. */
 function Feed({ lines, waiting }: { lines: FeedLine[]; waiting: boolean }) {
+  const newest = lines.slice(0, 3);
+  const rest = lines.slice(3);
   return (
     <div>
       <div className="mb-1.5 text-[13px] font-medium text-muted">What the processor just did</div>
-      <ol className="h-[180px] space-y-0.5 overflow-hidden rounded-xl border border-line bg-surface px-3 py-2">
-        {waiting && (
-          <li className="py-1 text-[14px] text-faint">Waiting for the first payment instruction…</li>
+      <div className="card-quiet rounded-xl px-3 py-2">
+        <ol className="min-h-[76px] space-y-0.5">
+          {waiting && (
+            <li className="py-1 text-[13.5px] text-faint">Waiting for the first payment instruction…</li>
+          )}
+          {newest.map((line, index) => (
+            <FeedItem key={line.id} line={line} newest={index === 0} />
+          ))}
+        </ol>
+        {rest.length > 0 && (
+          <details className="mt-1 border-t border-line pt-1">
+            <summary className="cursor-pointer text-[12.5px] text-muted hover:text-ink">
+              Show all ({formatCount(lines.length)} recent)
+            </summary>
+            <ol className="mt-1 space-y-0.5">
+              {rest.map((line) => (
+                <FeedItem key={line.id} line={line} />
+              ))}
+            </ol>
+          </details>
         )}
-        {lines.map((line, index) => (
-          <li
-            key={line.id}
-            className={cx(
-              "flex items-center gap-2.5 py-[3px] text-[14.5px]",
-              index === 0 ? "rise text-ink" : "text-muted",
-            )}
-          >
-            <span
-              className={cx(
-                "figures w-6 shrink-0 text-center text-[12px] font-semibold",
-                FEED_STYLE[line.tone].className,
-              )}
-              aria-hidden
-            >
-              {FEED_STYLE[line.tone].glyph}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{line.text}</span>
-            <span className="figures shrink-0 text-[11.5px] text-faint">{formatTimeMs(line.at)}</span>
-          </li>
-        ))}
-      </ol>
+      </div>
     </div>
+  );
+}
+
+function FeedItem({ line, newest }: { line: FeedLine; newest?: boolean }) {
+  return (
+    <li
+      className={cx(
+        "flex items-center gap-2.5 py-[2px] text-[13.5px]",
+        newest ? "rise text-ink" : "text-muted",
+      )}
+    >
+      <span
+        className={cx(
+          "figures w-6 shrink-0 text-center text-[11.5px] font-semibold",
+          FEED_STYLE[line.tone].className,
+        )}
+        aria-hidden
+      >
+        {FEED_STYLE[line.tone].glyph}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{line.text}</span>
+      <span className="figures shrink-0 text-[11px] text-faint">{formatTimeMs(line.at)}</span>
+    </li>
   );
 }
 
@@ -270,7 +331,7 @@ function FlowStrip({ run, state, complete }: { run: Run; state: TheaterState | n
     },
   ];
   return (
-    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+    <div className="card-quiet rounded-xl px-4 py-3">
       <ol className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-0" aria-label="Where each instruction goes">
         {steps.map((step, index) => (
           <li key={step.human} className="relative flex min-w-0 items-center sm:pr-6">
@@ -360,10 +421,10 @@ export function Climax({
     <section
       aria-label={pass ? "Integrity verified" : "Payment integrity failed"}
       className={cx(
-        "verdict-in rounded-2xl border p-5 sm:p-7",
+        "verdict-in card-quiet rounded-2xl p-5 sm:p-7",
         pass
-          ? "glow-success border-paid/50 bg-paid-soft/40"
-          : "glow-danger border-unpaid/50 bg-unpaid-soft/40",
+          ? "glow-verdict-pass border-paid/40 bg-paid-soft/25"
+          : "glow-verdict-fail border-unpaid/40 bg-unpaid-soft/25",
       )}
     >
       <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -416,7 +477,7 @@ export function Climax({
           </div>
         )}
       </div>
-      <ul className="mt-6 divide-y divide-line rounded-xl border border-line bg-surface">
+      <ul className="card-quiet mt-6 divide-y divide-line rounded-xl">
         {CHECK_ORDER.map((id) => {
           const invariant = run.invariants?.find((item) => item.id === id);
           if (!invariant) return null;

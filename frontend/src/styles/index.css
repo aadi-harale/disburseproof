@@ -295,6 +295,35 @@
     0 10px 30px -10px rgb(99 102 241 / 0.7);
 }
 
+@keyframes leak-flash {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* A repeat payment just took budget: a short red tint over the bar. */
+.leak-flash {
+  animation: leak-flash 280ms ease-out both;
+}
+
+/* Quiet cards: a translucent surface and a softer border than a plain panel.
+   Static containers only — never the tile grid, so replay stays smooth. */
+.card-quiet {
+  border: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+/* Ambient glow decided by the computed verdict, never by which section it is in. */
+.glow-verdict-fail {
+  box-shadow: 0 0 50px -12px rgb(239 68 68 / 0.25);
+}
+.glow-verdict-pass {
+  box-shadow: 0 0 50px -12px rgb(16 185 129 / 0.25);
+}
+
 /* Animated connectors for the AWS pipeline strip. */
 .flow-x {
   background-image: repeating-linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 16px);
