@@ -47,14 +47,12 @@ export function VerificationPill({ run }: { run: Run }) {
       </span>
       <dl className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
         <span className="flex items-center gap-1.5" title={run.fingerprint}>
-          <dt className="sr-only">Replay fingerprint</dt>
-          <span className="text-faint">Replay fingerprint</span>
+          <dt className="text-faint">Replay fingerprint</dt>
           <dd className="figures text-ink">{shortHash(run.fingerprint, 10)}</dd>
         </span>
         {run.receipt_sha256 && (
           <span className="flex items-center gap-1.5" title={run.receipt_sha256}>
-            <dt className="sr-only">Result digest</dt>
-            <span className="text-faint">Result digest</span>
+            <dt className="text-faint">Result digest</dt>
             <dd className="figures text-ink">{shortHash(run.receipt_sha256, 10)}</dd>
           </span>
         )}
