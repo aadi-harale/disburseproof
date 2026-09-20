@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { cx } from "../../components/ui/cx";
 import { Icon } from "../../components/ui/Icon";
@@ -9,6 +9,7 @@ import { CHECK, CHECK_ORDER, TERMS } from "../../lib/labels";
 import { STATE_ORDER, STUDENT_STATES } from "../runs/studentStates";
 import { StudentGrid } from "../runs/StudentGrid";
 import { deriveTheater, inspect, type FeedLine, type TheaterState } from "./replay";
+import { VerificationPill } from "./VerificationPill";
 
 /**
  * The results view for any run: grid, budget, counters, feed and flow strip, then
@@ -23,6 +24,7 @@ export function RunTheater({
   complete,
   view = "grid",
   viewToggle,
+  alternate,
   onSelect,
   verifiedSubline,
   showInspector = true,
@@ -36,29 +38,56 @@ export function RunTheater({
   complete: boolean;
   view?: "grid" | "list";
   viewToggle?: ReactNode;
+  /** The other recorded run of the same test: its final states can be shown on this grid. */
+  alternate?: { run: Run; tiles: StudentTile[] | undefined };
   onSelect?: (beneficiaryId: string) => void;
   verifiedSubline?: string;
   showInspector?: boolean;
   climaxRef?: React.Ref<HTMLDivElement>;
 }) {
+  const [showAlternate, setShowAlternate] = useState(false);
+  const [toggled, setToggled] = useState(false);
+  const paired = alternate && alternate.run.fingerprint === run.fingerprint ? alternate : null;
+  const shownRun = paired && showAlternate ? paired.run : run;
   const ready = entitlements && deliveries;
   const state = ready ? deriveTheater(entitlements, deliveries, cursor) : null;
   // Once everything is shown, the tiles are the backend's evaluated states.
-  const tiles = complete && run.verdict && entitlements ? entitlements : state?.tiles;
-  const counts = complete && run.verdict && entitlements ? countStates(entitlements) : state?.counts;
+  const own = complete && run.verdict && entitlements ? entitlements : state?.tiles;
+  const tiles = paired && showAlternate ? paired.tiles : own;
+  const counts = tiles ? countStates(tiles) : undefined;
 
   return (
     <div className="space-y-5">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:gap-7">
         <div className="min-w-0">
-          <StudentGrid
-            items={tiles}
-            expected={run.logical_events}
-            size="lg"
-            view={view}
-            onSelect={onSelect}
-            label={`${formatCount(run.logical_events)} students`}
-          />
+          {paired && (
+            <ProcessorToggle
+              showAlternate={showAlternate}
+              onChange={(next) => {
+                setToggled(true);
+                setShowAlternate(next);
+              }}
+              current={run}
+              other={paired.run}
+            />
+          )}
+          <div
+            className={cx(
+              "rounded-xl",
+              paired && showAlternate && shownRun.verdict === "FAIL" && "glow-verdict-fail",
+              paired && !showAlternate && shownRun.verdict === "PASS" && "glow-verdict-pass",
+            )}
+          >
+            <StudentGrid
+              items={tiles}
+              expected={run.logical_events}
+              size="lg"
+              view={view}
+              crossfade={Boolean(paired) && toggled}
+              onSelect={showAlternate ? undefined : onSelect}
+              label={`${formatCount(run.logical_events)} students`}
+            />
+          </div>
           <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
             <Legend counts={counts} />
             {viewToggle}
@@ -81,6 +110,77 @@ export function RunTheater({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Switches the same grid between the final states of the two recorded runs of one
+ * test. Both badges are that run's own evaluated numbers.
+ */
+function ProcessorToggle({
+  showAlternate,
+  onChange,
+  current,
+  other,
+}: {
+  showAlternate: boolean;
+  onChange: (showAlternate: boolean) => void;
+  current: Run;
+  other: Run;
+}) {
+  const unprotected = current.processor === "protected" ? other : current;
+  const protectedRun = current.processor === "protected" ? current : other;
+  const showingUnprotected = showAlternate === (other.processor === "vulnerable");
+  const u = unprotected.summary;
+  const p = protectedRun.summary;
+  const badge = showingUnprotected
+    ? u
+      ? `Final state: ${formatCount(u.double_paid)} paid twice · ${formatCount(u.unpaid)} got ₹0`
+      : ""
+    : p
+      ? `Final state: ${formatCount(p.duplicates_suppressed)} repeat instructions refused · DynamoDB TransactWriteItems`
+      : "";
+  const option = (label: string, glyph: string, active: boolean, next: boolean, tone: string) => (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onChange(next)}
+      className={cx(
+        "figures inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13.5px] font-medium",
+        active ? tone : "text-muted hover:text-ink",
+      )}
+    >
+      <span aria-hidden>{glyph}</span>
+      {label}
+    </button>
+  );
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div
+        role="group"
+        aria-label="Which processor's final state to show"
+        className="inline-flex items-center rounded-lg border border-line-strong p-0.5"
+      >
+        {option(
+          "Unprotected",
+          "✕",
+          showingUnprotected,
+          other.processor === "vulnerable",
+          "bg-unpaid-soft text-unpaid-text",
+        )}
+        <span className="px-1 text-faint" aria-hidden>
+          ⟷
+        </span>
+        {option(
+          "Protected",
+          "✓",
+          !showingUnprotected,
+          other.processor === "protected",
+          "bg-paid-soft text-paid-text",
+        )}
+      </div>
+      <p className={cx("text-[13.5px]", showingUnprotected ? "text-unpaid-text" : "text-muted")}>{badge}</p>
     </div>
   );
 }
@@ -115,43 +215,79 @@ function Legend({ counts }: { counts: Record<string, number> | undefined }) {
   );
 }
 
+/**
+ * The budget, and where it goes: green first payments, amber repeat payments (the
+ * leak), the rest remaining. Every figure is the replayed or live delivery rows.
+ */
 function BudgetBar({ run, state }: { run: Run; state: TheaterState | null }) {
   const budget = run.total_budget_paise;
   const first = state?.spentFirst ?? 0;
   const repeat = state?.spentRepeat ?? 0;
   const remaining = Math.max(0, budget - first - repeat);
   const pct = (value: number) => (budget > 0 ? `${(value / budget) * 100}%` : "0%");
+  const leaked = repeat > 0;
+  const refused = state?.repeatsRefused ?? 0;
+  const starved = state?.unpaid ?? 0;
   return (
-    <div>
+    <div className="card-quiet rounded-xl px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="text-[15px] font-medium">Synthetic scholarship budget</div>
         <div className="figures text-[13px] text-muted">{formatINR(budget)}</div>
       </div>
       <div
-        className="mt-2 flex h-4 overflow-hidden rounded-full bg-pending"
+        className="relative mt-2 h-4 overflow-hidden rounded-full bg-pending"
         role="img"
-        aria-label={`Budget: ${formatINR(first)} paid once, ${formatINR(repeat)} paid as repeats, ${formatINR(remaining)} left`}
+        aria-label={`Budget: ${formatINR(first)} in first payments, ${formatINR(repeat)} in repeat payments, ${formatINR(remaining)} left`}
       >
-        <div className="h-full bg-paid transition-[width] duration-300" style={{ width: pct(first) }} />
-        <div className="h-full bg-twice transition-[width] duration-300" style={{ width: pct(repeat) }} />
+        <div className="flex h-full">
+          <div className="h-full bg-paid transition-[width] duration-300" style={{ width: pct(first) }} />
+          <div className="h-full bg-twice transition-[width] duration-300" style={{ width: pct(repeat) }} />
+        </div>
+        {leaked && (
+          // Keyed by the number of repeat payments: a new one remounts this and replays the flash.
+          <span
+            key={state?.repeatPayments ?? 0}
+            className="leak-flash pointer-events-none absolute inset-0 bg-unpaid"
+            aria-hidden
+          />
+        )}
       </div>
-      <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-[13px]">
-        <span className="flex items-center gap-1.5 text-muted">
+      <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-[13px] text-muted">
+        <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-paid" aria-hidden /> First payments{" "}
           <span className="figures text-ink">{formatINR(first)}</span>
         </span>
-        {repeat > 0 && (
-          <span className="flex items-center gap-1.5 text-muted">
-            <span className="size-2.5 rounded-sm bg-twice" aria-hidden /> Repeat payments{" "}
-            <span className="figures text-twice">{formatINR(repeat)}</span>
-          </span>
-        )}
-        <span className="text-muted">
+        <span>
           Left{" "}
           <span className={cx("figures", remaining === 0 ? "text-unpaid" : "text-ink")}>
             {formatINR(remaining)}
           </span>
         </span>
+      </div>
+      <div className="mt-2 space-y-1 border-t border-line pt-2 text-[15px]" aria-live="polite">
+        {leaked ? (
+          <p className="text-twice">
+            Repeat payments: <span className="figures font-semibold">−{formatINR(repeat)}</span>{" "}
+            <span className="text-muted">
+              ({formatCount(state?.paidTwice ?? 0)} student{(state?.paidTwice ?? 0) === 1 ? "" : "s"} paid
+              twice)
+            </span>
+          </p>
+        ) : refused > 0 ? (
+          <p className="text-accent-text">
+            Repeats refused: <span className="figures font-semibold">{formatCount(refused)}</span>{" "}
+            <span className="text-muted">— {formatINR(0)} leaked</span>
+          </p>
+        ) : (
+          <p className="text-faint">No repeat payment yet.</p>
+        )}
+        {remaining === 0 && starved > 0 && (
+          <p className="text-unpaid">
+            Budget used up — <span className="figures font-semibold">{formatCount(starved)}</span> eligible
+            student
+            {starved === 1 ? "" : "s"} got ₹0
+          </p>
+        )}
       </div>
     </div>
   );
@@ -187,9 +323,12 @@ function Counters({ run, state }: { run: Run; state: TheaterState | null }) {
     });
   }
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
+    <dl className="grid grid-cols-2 gap-2">
       {items.map((item, index) => (
-        <div key={item.label} className={cx("bg-surface px-3.5 py-2", index === 4 && "col-span-2")}>
+        <div
+          key={item.label}
+          className={cx("card-quiet rounded-xl px-3.5 py-2", index === 4 && "col-span-2")}
+        >
           <dt className="text-[12.5px] text-muted">{item.label}</dt>
           <dd
             className={cx(
@@ -214,37 +353,59 @@ const FEED_STYLE: Record<FeedLine["tone"], { glyph: string; className: string }>
   unpaid: { glyph: "₹0", className: "text-unpaid" },
 };
 
+/** The newest few things the processor did, in words; the rest on demand. */
 function Feed({ lines, waiting }: { lines: FeedLine[]; waiting: boolean }) {
+  const newest = lines.slice(0, 3);
+  const rest = lines.slice(3);
   return (
     <div>
       <div className="mb-1.5 text-[13px] font-medium text-muted">What the processor just did</div>
-      <ol className="h-[180px] space-y-0.5 overflow-hidden rounded-xl border border-line bg-surface px-3 py-2">
-        {waiting && (
-          <li className="py-1 text-[14px] text-faint">Waiting for the first payment instruction…</li>
+      <div className="card-quiet rounded-xl px-3 py-2">
+        <ol className="min-h-[76px] space-y-0.5">
+          {waiting && (
+            <li className="py-1 text-[13.5px] text-faint">Waiting for the first payment instruction…</li>
+          )}
+          {newest.map((line, index) => (
+            <FeedItem key={line.id} line={line} newest={index === 0} />
+          ))}
+        </ol>
+        {rest.length > 0 && (
+          <details className="mt-1 border-t border-line pt-1">
+            <summary className="cursor-pointer text-[12.5px] text-muted hover:text-ink">
+              Show all ({formatCount(lines.length)} recent)
+            </summary>
+            <ol className="mt-1 space-y-0.5">
+              {rest.map((line) => (
+                <FeedItem key={line.id} line={line} />
+              ))}
+            </ol>
+          </details>
         )}
-        {lines.map((line, index) => (
-          <li
-            key={line.id}
-            className={cx(
-              "flex items-center gap-2.5 py-[3px] text-[14.5px]",
-              index === 0 ? "rise text-ink" : "text-muted",
-            )}
-          >
-            <span
-              className={cx(
-                "figures w-6 shrink-0 text-center text-[12px] font-semibold",
-                FEED_STYLE[line.tone].className,
-              )}
-              aria-hidden
-            >
-              {FEED_STYLE[line.tone].glyph}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{line.text}</span>
-            <span className="figures shrink-0 text-[11.5px] text-faint">{formatTimeMs(line.at)}</span>
-          </li>
-        ))}
-      </ol>
+      </div>
     </div>
+  );
+}
+
+function FeedItem({ line, newest }: { line: FeedLine; newest?: boolean }) {
+  return (
+    <li
+      className={cx(
+        "flex items-center gap-2.5 py-[2px] text-[13.5px]",
+        newest ? "rise text-ink" : "text-muted",
+      )}
+    >
+      <span
+        className={cx(
+          "figures w-6 shrink-0 text-center text-[11.5px] font-semibold",
+          FEED_STYLE[line.tone].className,
+        )}
+        aria-hidden
+      >
+        {FEED_STYLE[line.tone].glyph}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{line.text}</span>
+      <span className="figures shrink-0 text-[11px] text-faint">{formatTimeMs(line.at)}</span>
+    </li>
   );
 }
 
@@ -270,7 +431,7 @@ function FlowStrip({ run, state, complete }: { run: Run; state: TheaterState | n
     },
   ];
   return (
-    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+    <div className="card-quiet rounded-xl px-4 py-3">
       <ol className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-0" aria-label="Where each instruction goes">
         {steps.map((step, index) => (
           <li key={step.human} className="relative flex min-w-0 items-center sm:pr-6">
@@ -360,10 +521,10 @@ export function Climax({
     <section
       aria-label={pass ? "Integrity verified" : "Payment integrity failed"}
       className={cx(
-        "verdict-in rounded-2xl border p-5 sm:p-7",
+        "verdict-in card-quiet rounded-2xl p-5 sm:p-7",
         pass
-          ? "glow-success border-paid/50 bg-paid-soft/40"
-          : "glow-danger border-unpaid/50 bg-unpaid-soft/40",
+          ? "glow-verdict-pass border-paid/40 bg-paid-soft/25"
+          : "glow-verdict-fail border-unpaid/40 bg-unpaid-soft/25",
       )}
     >
       <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -416,35 +577,50 @@ export function Climax({
           </div>
         )}
       </div>
-      <ul className="mt-6 divide-y divide-line rounded-xl border border-line bg-surface">
+      <VerificationPill run={run} />
+      <ul className="mt-3 flex flex-wrap gap-2">
         {CHECK_ORDER.map((id) => {
           const invariant = run.invariants?.find((item) => item.id === id);
           if (!invariant) return null;
           const ok = invariant.result === "PASS";
-          const detail =
-            id === "every_eligible_paid"
-              ? `${formatCount(eligible - s.unpaid)}/${formatCount(eligible)} eligible students paid`
-              : id === "budget_guard" && ok && !pass
-                ? "The budget never overspent — the damage was who got the money."
-                : invariant.detail;
+          const figure =
+            id === "one_payment_per_entitlement"
+              ? `${formatCount(s.double_paid)} paid twice`
+              : id === "every_eligible_paid"
+                ? `${formatCount(eligible - s.unpaid)}/${formatCount(eligible)}`
+                : `${formatINR(s.spent_paise)} of ${formatINR(s.budget_paise)}`;
           return (
-            <li key={id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+            <li
+              key={id}
+              title={`${invariant.title}: ${invariant.detail}`}
+              className={cx(
+                "card-quiet flex items-center gap-2 rounded-xl px-3 py-2",
+                ok ? "border-paid/40" : "border-unpaid/40",
+              )}
+            >
               <span
                 className={cx(
-                  "figures inline-flex w-[72px] items-center justify-center gap-1 rounded-md py-1 text-[14px] font-bold tracking-wide text-white",
+                  "figures inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] font-bold text-white",
                   ok ? "bg-paid" : "bg-unpaid",
                 )}
               >
-                <Icon name={ok ? "check" : "close"} size={14} strokeWidth={2.6} />
+                <Icon name={ok ? "check" : "close"} size={12} strokeWidth={2.6} />
                 {invariant.result}
               </span>
-              <span className="text-[17px] font-semibold">{CHECK[id]?.primary ?? invariant.title}</span>
-              <span className="text-[12px] text-faint">{CHECK[id]?.technical}</span>
-              <span className="w-full text-[14px] text-muted sm:ml-auto sm:w-auto">{detail}</span>
+              <span className="text-[15px] font-semibold">{CHECK[id]?.primary ?? invariant.title}</span>
+              <span className="figures text-[14px] text-muted">· {figure}</span>
+              <span className="text-[11.5px] text-faint">{CHECK[id]?.technical}</span>
             </li>
           );
         })}
       </ul>
+      {!pass && (
+        <p className="mt-2 text-[14px] text-muted">
+          {run.invariants?.find((item) => item.id === "budget_guard")?.result === "PASS"
+            ? "The budget never overspent — the damage was who got the money."
+            : ""}
+        </p>
+      )}
     </section>
   );
 }

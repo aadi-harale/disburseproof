@@ -7,8 +7,10 @@ import { ErrorState } from "../../components/ui/ErrorState";
 import { Hash } from "../../components/ui/Hash";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useStudent } from "../../lib/api/queries";
+import type { Run, StudentDetail } from "../../lib/api/types";
 import type { DeliveryOutcome, DeliveryRecord } from "../../lib/api/types";
-import { formatINR, formatTimeMs } from "../../lib/format";
+import { formatCount, formatINR, formatTimeMs } from "../../lib/format";
+import { PROCESSOR } from "../../lib/labels";
 import { OUTCOME } from "../../lib/labels";
 import { STUDENT_STATES } from "../runs/studentStates";
 
@@ -24,13 +26,17 @@ export function StudentDrawer({
   beneficiaryId,
   live,
   onClose,
+  otherRunId,
 }: {
   runId: string;
   beneficiaryId: string | undefined;
   live: boolean;
   onClose: () => void;
+  /** The other recorded run of the same test: shown beside this one. */
+  otherRunId?: string;
 }) {
   const detail = useStudent(runId, beneficiaryId, live);
+  const other = useStudent(otherRunId, beneficiaryId, false);
   const data = detail.data;
   const tile = data?.entitlements[0];
 
@@ -39,7 +45,13 @@ export function StudentDrawer({
       open={Boolean(beneficiaryId)}
       onClose={onClose}
       title={data ? data.student.display_name : (beneficiaryId ?? "Student")}
-      subtitle={<span className="figures">{beneficiaryId} · synthetic beneficiary</span>}
+      subtitle={
+        <span className="figures">
+          {beneficiaryId}
+          {data?.entitlements[0] ? ` · entitlement ${data.entitlements[0].entitlement_key}` : ""}
+        </span>
+      }
+      width="max-w-3xl"
     >
       {detail.isLoading && (
         <div className="space-y-3">
@@ -73,6 +85,14 @@ export function StudentDrawer({
               </div>
             ))}
           </section>
+
+          <SideBySide
+            here={data}
+            there={other.data ?? null}
+            loading={Boolean(otherRunId) && other.isLoading}
+          />
+
+          <RootCause detail={data} />
 
           {data.rejections.length > 0 && (
             <section className="rounded-lg border border-unpaid/30 p-3">
@@ -182,5 +202,118 @@ function DeliveryItem({ delivery }: { delivery: DeliveryRecord }) {
         )}
       </dl>
     </li>
+  );
+}
+
+/** One line per payment instruction, for this run and the other run of the same test. */
+function SideBySide({
+  here,
+  there,
+  loading,
+}: {
+  here: StudentDetail;
+  there: StudentDetail | null;
+  loading: boolean;
+}) {
+  return (
+    <section className="grid gap-4 sm:grid-cols-2">
+      <RunColumn detail={here} />
+      {there ? (
+        <RunColumn detail={there} />
+      ) : loading ? (
+        <Skeleton className="h-32" />
+      ) : (
+        <div className="rounded-lg border border-dashed border-line px-3 py-2.5 text-[13px] text-muted">
+          No matching run of the same test by the other processor yet.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ordinal(index: number): string {
+  return index === 0 ? "1st" : index === 1 ? "2nd" : index === 2 ? "3rd" : `${index + 1}th`;
+}
+
+function RunColumn({ detail }: { detail: StudentDetail }) {
+  const run: Run = detail.run;
+  const received = detail.payments.reduce((sum, payment) => sum + payment.amount_paise, 0);
+  // How many payments this entitlement had already had when each instruction arrived.
+  const paidBefore = detail.deliveries.map(
+    (_, index) =>
+      detail.deliveries.slice(0, index).filter((earlier) => earlier.outcome === "COMMITTED").length,
+  );
+  return (
+    <div className="rounded-lg border border-line px-3 py-2.5">
+      <div className="text-[12px] font-semibold tracking-wide text-muted uppercase">
+        {PROCESSOR[run.processor].primary} run
+      </div>
+      <ol className="mt-2 space-y-1.5">
+        {detail.deliveries.map((delivery, index) => {
+          const committed = delivery.outcome === "COMMITTED";
+          const again = committed && (paidBefore[index] ?? 0) > 0;
+          const result = committed
+            ? again
+              ? "paid again"
+              : "paid"
+            : delivery.outcome === "DUPLICATE_SUPPRESSED"
+              ? "refused"
+              : "not paid — budget ran out";
+          return (
+            <li key={delivery.delivery_id} className="flex flex-wrap items-baseline gap-x-2 text-[13.5px]">
+              <span className="font-medium">{ordinal(index)} instruction</span>
+              <span className="figures text-[11.5px] text-faint" title={delivery.delivery_id}>
+                {delivery.delivery_id.slice(0, 8)}… · {formatTimeMs(delivery.processed_at)}
+              </span>
+              <span
+                className={cx(
+                  again
+                    ? "text-twice"
+                    : committed
+                      ? "text-paid"
+                      : delivery.outcome === "DUPLICATE_SUPPRESSED"
+                        ? "text-accent-text"
+                        : "text-unpaid",
+                )}
+              >
+                → {result}
+              </span>
+            </li>
+          );
+        })}
+        {detail.deliveries.length === 0 && (
+          <li className="text-[13px] text-muted">No payment instruction arrived.</li>
+        )}
+      </ol>
+      <p className="mt-2 border-t border-line pt-2 text-[14px]">
+        Total received: <span className="figures font-semibold">{formatINR(received)}</span>
+      </p>
+    </div>
+  );
+}
+
+/** Why this student's result happened, in the wording the demo uses. */
+function RootCause({ detail }: { detail: StudentDetail }) {
+  const run = detail.run;
+  const summary = run.summary;
+  const state = detail.entitlements[0]?.state;
+  const refused = detail.deliveries.some((delivery) => delivery.outcome === "DUPLICATE_SUPPRESSED");
+  let text: string | null = null;
+  if (state === "paid_twice") {
+    text =
+      "The unprotected processor pays every instruction it receives. It never checks whether this entitlement was already paid.";
+  } else if (state === "unpaid" && summary) {
+    // Repeat payments = payments beyond one per paid entitlement, from this run's own evaluation.
+    const repeats = Math.max(0, summary.ledger_effects - (summary.paid_once + summary.double_paid));
+    text = `This student's instruction arrived after the budget ran out. The ${formatCount(repeats)} repeat payments had already used ${formatINR(summary.misallocated_paise)}.`;
+  } else if (refused) {
+    text =
+      "Refused because this entitlement's “paid” record already existed. The record and the payment are written in one DynamoDB transaction, so a repeat cannot create a second payment.";
+  }
+  if (!text) return null;
+  return (
+    <p className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[14px] leading-relaxed">
+      {text}
+    </p>
   );
 }

@@ -30,6 +30,7 @@ export function StudentGrid({
   label = "Students",
   view = "grid",
   caption = true,
+  crossfade = false,
 }: {
   items: StudentTile[] | undefined;
   expected: number;
@@ -43,6 +44,8 @@ export function StudentGrid({
   label?: string;
   view?: "grid" | "list";
   caption?: boolean;
+  /** Fade between states instead of replaying the entrance: for switching whole runs. */
+  crossfade?: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -123,14 +126,21 @@ export function StudentGrid({
           const tile = (
             <span
               // Keyed by state: a state change remounts the tile and replays its entrance.
-              key={item.state}
+              // In crossfade mode the key is stable, so only the colour transitions.
+              key={crossfade ? "tile" : item.state}
               className={cx(
                 "relative grid size-full place-items-center",
                 radius,
                 state.tile,
-                pending ? (marked ? "" : "tile-pending") : "tile-enter",
-                item.state === "unpaid" && "tile-alarm",
-                item.state === "paid_twice" && "tile-warn",
+                crossfade
+                  ? "transition-colors duration-200"
+                  : pending
+                    ? marked
+                      ? ""
+                      : "tile-pending"
+                    : "tile-enter",
+                !crossfade && item.state === "unpaid" && "tile-alarm",
+                !crossfade && item.state === "paid_twice" && "tile-warn",
                 marked && pending && "ring-2 ring-twice ring-inset",
               )}
               style={

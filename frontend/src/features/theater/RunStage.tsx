@@ -33,6 +33,7 @@ export function RunStage({
   after,
   toolbar,
   toastOnFinish = false,
+  alternateRunId,
 }: {
   runId: string;
   initial?: "empty" | "final";
@@ -48,6 +49,8 @@ export function RunStage({
   toolbar?: ReactNode;
   /** Announce the verdict when a live run finishes while watched. */
   toastOnFinish?: boolean;
+  /** The other recorded run of the same test, offered as a toggle over the grid. */
+  alternateRunId?: string;
 }) {
   const toast = useToast();
   const client = useQueryClient();
@@ -56,6 +59,8 @@ export function RunStage({
   const live = run ? !run.is_terminal : false;
   const students = useStudents(runId, live);
   const deliveries = useDeliveries(runId, live);
+  const alternateRun = useRun(alternateRunId);
+  const alternateStudents = useStudents(alternateRunId, false);
   const [speed, setSpeed] = useState<ReplaySpeed>("demo");
   const [view, setView] = useState<"grid" | "list">(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 480px)").matches ? "list" : "grid",
@@ -204,6 +209,9 @@ export function RunStage({
         cursor={cursor}
         complete={complete}
         view={view}
+        alternate={
+          alternateRun.data ? { run: alternateRun.data, tiles: alternateStudents.data?.items } : undefined
+        }
         viewToggle={
           <Segmented
             label="View"
