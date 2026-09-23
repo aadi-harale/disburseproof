@@ -1,0 +1,8 @@
+# DisburseProof — a public demo with synthetic data only.
+User-agent: *
+Allow: /
+
+# Runs are generated on demand and change constantly; no value in indexing them.
+Disallow: /runs/
+Disallow: /compare
+Disallow: /evidence
