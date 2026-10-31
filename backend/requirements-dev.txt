@@ -1,7 +1,7 @@
 # Local development, unit tests and CI. Install with: pip install -r requirements-dev.txt
 # Pinned exactly; Dependabot proposes updates.
 -r src/requirements.txt
-boto3[crt]==1.43.98  # the crt extra reads `aws login` credentials
+boto3[crt]==1.43.121  # the crt extra reads `aws login` credentials
 pytest==9.1.1
 ruff==0.16.8
 mypy==2.3.1
