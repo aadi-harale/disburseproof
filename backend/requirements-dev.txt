@@ -3,6 +3,6 @@
 -r src/requirements.txt
 boto3[crt]==1.43.98  # the crt extra reads `aws login` credentials
 pytest==9.1.1
-ruff==0.16.8
+ruff==0.17.3
 mypy==2.3.1
 pip-audit==2.10.1
